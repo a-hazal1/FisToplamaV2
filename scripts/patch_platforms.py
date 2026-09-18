@@ -48,18 +48,15 @@ if web_index.exists():
         start_marker in html
         and end_marker in html
     ):
-        before =
-            html.split(
+        before = html.split(
                 start_marker
             )[0]
 
-        after =
-            html.split(
+        after = html.split(
                 end_marker
             )[1]
 
-        html =
-            before + after
+        html = before + after
 
 
     scanner_bridge = r"""
