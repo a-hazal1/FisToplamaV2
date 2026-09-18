@@ -683,11 +683,9 @@ async function processReceipt(
   }
 }
 
-self.onmessage =
-  async function (event) {
-    const message =
-      event.data;
-
+self.onmessage = async function (event) {
+    const message = event.data;
+  
     if (
       !message ||
       !message.id ||
@@ -695,24 +693,43 @@ self.onmessage =
     ) {
       return;
     }
-
-    const id =
-      message.id;
-
+  
+    const id = message.id;
+  
     try {
-      const result =
-        await processReceipt(
-          message.buffer
-        );
-    // Worker başlar başlamaz OpenCV'yi arka planda hazırla.
-    getCv()
-      .then(() => {
-        console.log('OpenCV Worker hazır.');
-      })
-      .catch((error) => {
-        console.error('OpenCV Worker hazırlama hatası:', error);
+      const result = await Promise.race([
+        processReceipt(message.buffer),
+  
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(
+              new Error('SCAN_TIMEOUT')
+            ),
+            20000
+          )
+        ),
+      ]);
+  
+      self.postMessage(
+        {
+          id: id,
+          ok: true,
+          buffer: result.buffer,
+          confidence: result.confidence,
+        },
+        [result.buffer]
+      );
+    } catch (error) {
+      self.postMessage({
+        id: id,
+        ok: false,
+        error:
+          error && error.message
+            ? error.message
+            : String(error),
       });
-
+    }
+  };
       /*
        * ArrayBuffer'ı kopyalamadan
        * ana thread'e transfer ediyoruz.
