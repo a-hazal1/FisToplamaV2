@@ -2,72 +2,54 @@ from pathlib import Path
 import shutil
 
 
-# ==================================================
+# ============================================================
 # WEB
-# ==================================================
+# ============================================================
 
 web_dir = Path("web")
 web_index = web_dir / "index.html"
 
-source_scanner = Path(
-    "scripts/opencv_receipt.js"
-)
+source_scanner = Path("scripts/opencv_receipt.js")
+target_scanner = web_dir / "opencv_receipt.js"
 
-target_scanner = (
-    web_dir /
-    "opencv_receipt.js"
-)
-
-source_worker = Path(
-    "scripts/opencv_worker.js"
-)
-
-target_worker = (
-    web_dir /
-    "opencv_worker.js"
-)
+source_worker = Path("scripts/opencv_worker.js")
+target_worker = web_dir / "opencv_worker.js"
 
 
-if (
-    web_dir.exists()
-    and source_scanner.exists()
-):
+# Flutter create ile web klasörü oluşturulduktan sonra
+# scanner bridge dosyasını web içine kopyala.
+if web_dir.exists() and source_scanner.exists():
     shutil.copy2(
         source_scanner,
         target_scanner,
     )
 
 
-if (
-    web_dir.exists()
-    and source_worker.exists()
-):
+# OpenCV Worker dosyasını web içine kopyala.
+if web_dir.exists() and source_worker.exists():
     shutil.copy2(
         source_worker,
         target_worker,
     )
 
 
+# index.html içerisine yalnızca küçük scanner bridge dosyasını ekle.
+# opencv.js burada doğrudan çalıştırılmıyor.
+# opencv_worker.js kendi Worker ortamında opencv.js dosyasını yükleyecek.
 if web_index.exists():
     html = web_index.read_text(
         encoding="utf-8"
     )
 
-    scanner_tag = (
-        '<script '
-        'src="opencv_receipt.js">'
-        '</script>'
-    )
+    scanner_tag = '<script src="opencv_receipt.js"></script>'
 
-    # Önce varsa eski kopyayı kaldır
+    # Önceden eklenmiş scanner etiketlerini temizle.
     html = html.replace(
         scanner_tag,
         "",
     )
 
-    # OpenCV artık index.html içine
-    # EKLENMİYOR.
-    # Worker kendi içinde opencv.js yükler.
+    # Daha önceki denemelerden kalabilecek OpenCV scriptlerini temizle.
     html = html.replace(
         '<script src="opencv.js"></script>',
         "",
@@ -79,12 +61,21 @@ if web_index.exists():
     )
 
     html = html.replace(
+        '<script async src="opencv.js"></script>',
+        "",
+    )
+
+    html = html.replace(
+        '<script src="https://docs.opencv.org/4.x/opencv.js"></script>',
+        "",
+    )
+
+    html = html.replace(
         '<script src="https://docs.opencv.org/4.10.0/opencv.js"></script>',
         "",
     )
 
-    # Sadece küçük Flutter <-> Worker
-    # köprüsü sayfaya yüklenir.
+    # Scanner bridge'i body kapanmadan hemen önce ekle.
     html = html.replace(
         "</body>",
         f"  {scanner_tag}\n</body>",
@@ -96,9 +87,9 @@ if web_index.exists():
     )
 
 
-# ==================================================
+# ============================================================
 # ANDROID
-# ==================================================
+# ============================================================
 
 manifest = Path(
     "android/app/src/main/AndroidManifest.xml"
@@ -125,13 +116,16 @@ if manifest.exists():
             )
 
     if additions:
-        pos = text.find(">")
+        # AndroidManifest.xml içindeki ilk <manifest ...> etiketinin
+        # kapanışından hemen sonra permission satırlarını ekler.
+        manifest_end = text.find(">")
 
-        text = (
-            text[:pos + 1]
-            + additions
-            + text[pos + 1:]
-        )
+        if manifest_end != -1:
+            text = (
+                text[:manifest_end + 1]
+                + additions
+                + text[manifest_end + 1:]
+            )
 
     manifest.write_text(
         text,
@@ -139,9 +133,9 @@ if manifest.exists():
     )
 
 
-# ==================================================
+# ============================================================
 # IOS
-# ==================================================
+# ============================================================
 
 plist = Path(
     "ios/Runner/Info.plist"
@@ -160,17 +154,36 @@ if plist.exists():
     <string>Galeriden fiş seçmek için fotoğraf erişimi gerekir.</string>
 """
 
-    if (
-        "NSCameraUsageDescription"
-        not in text
-    ):
+    if "NSCameraUsageDescription" not in text:
         text = text.replace(
             "</dict>",
-            additions
-            + "\n</dict>",
+            additions + "\n</dict>",
         )
 
     plist.write_text(
         text,
         encoding="utf-8",
+    )
+
+
+# ============================================================
+# BUILD DEBUG BİLGİSİ
+# ============================================================
+
+print("Platform patch tamamlandı.")
+
+if web_dir.exists():
+    print(
+        "opencv.js:",
+        (web_dir / "opencv.js").exists(),
+    )
+
+    print(
+        "opencv_receipt.js:",
+        target_scanner.exists(),
+    )
+
+    print(
+        "opencv_worker.js:",
+        target_worker.exists(),
     )
