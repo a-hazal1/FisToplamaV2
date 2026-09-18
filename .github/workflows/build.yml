@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   android-web:
+    name: Android + Web
     runs-on: ubuntu-latest
 
     steps:
@@ -32,9 +33,9 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
-      - name: Create Flutter platform files if needed
+      - name: Create Flutter platform files
         run: |
-          flutter create .
+          flutter create --project-name fistoplamav2 .
 
       - name: Patch platform files
         run: |
@@ -47,7 +48,8 @@ jobs:
           python3 scripts/fetch_opencv.py
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: |
+          flutter pub get
 
       - name: Build Android APK
         env:
@@ -76,12 +78,13 @@ jobs:
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
 
-      - name: Upload Pages artifact
+      - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
 
   deploy-web:
+    name: Deploy Web
     needs: android-web
     runs-on: ubuntu-latest
 
@@ -95,6 +98,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
   ios:
+    name: iOS Simulator
     runs-on: macos-latest
 
     steps:
@@ -110,9 +114,9 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
-      - name: Create Flutter platform files if needed
+      - name: Create Flutter platform files
         run: |
-          flutter create .
+          flutter create --project-name fistoplamav2 .
 
       - name: Patch platform files
         run: |
@@ -121,7 +125,8 @@ jobs:
           fi
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: |
+          flutter pub get
 
       - name: Build iOS Simulator
         env:
@@ -130,6 +135,7 @@ jobs:
         run: |
           flutter build ios \
             --simulator \
+            --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
 
