@@ -730,6 +730,14 @@ self.onmessage =
         await processReceipt(
           message.buffer
         );
+    // Worker başlar başlamaz OpenCV'yi arka planda hazırla.
+    getCv()
+      .then(() => {
+        console.log('OpenCV Worker hazır.');
+      })
+      .catch((error) => {
+        console.error('OpenCV Worker hazırlama hatası:', error);
+      });
 
       /*
        * ArrayBuffer'ı kopyalamadan
