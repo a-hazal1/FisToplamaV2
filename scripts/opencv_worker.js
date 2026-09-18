@@ -1,153 +1,78 @@
 let cvReadyPromise = null;
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-/* =========================================================
-   OPENCV BAŞLATMA
-   ========================================================= */
-
-function getCv() {
+async function getCv() {
   if (cvReadyPromise) {
     return cvReadyPromise;
   }
 
-  cvReadyPromise = new Promise((resolve, reject) => {
-    let finished = false;
+  cvReadyPromise = (async () => {
+    try {
+      if (!self.cv) {
+        importScripts('opencv.js');
+      }
 
-    const timeout = setTimeout(() => {
-      if (finished) return;
+      let candidate = self.cv;
 
-      finished = true;
-
-      reject(
-        new Error(
-          'OPENCV_INIT_TIMEOUT'
-        )
-      );
-    }, 30000);
-
-
-    function success(candidate) {
-      if (finished) return;
-
+      /*
+       * Bazı OpenCV.js sürümlerinde cv thenable olabilir.
+       * Burada .then().catch() zinciri KULLANMIYORUZ.
+       */
       if (
         candidate &&
-        typeof candidate.Mat === 'function'
+        typeof candidate.then === 'function'
       ) {
-        finished = true;
-
-        clearTimeout(timeout);
-
+        candidate = await candidate;
         self.cv = candidate;
-
-        resolve(candidate);
       }
-    }
 
+      const startedAt = Date.now();
+      const timeoutMs = 30000;
 
-    function fail(error) {
-      if (finished) return;
+      while (
+        Date.now() - startedAt < timeoutMs
+      ) {
+        candidate = self.cv;
 
-      finished = true;
-
-      clearTimeout(timeout);
-
-      reject(error);
-    }
-
-
-    /*
-     * OpenCV'nin klasik Emscripten
-     * runtime callback mekanizması.
-     */
-    self.Module = {
-      onRuntimeInitialized: function () {
-        try {
-          success(self.cv);
-        } catch (error) {
-          fail(error);
+        if (
+          candidate &&
+          typeof candidate.then === 'function'
+        ) {
+          candidate = await candidate;
+          self.cv = candidate;
         }
+
+        if (
+          candidate &&
+          typeof candidate.Mat === 'function'
+        ) {
+          return candidate;
+        }
+
+        await sleep(100);
       }
-    };
 
-
-    try {
-      /*
-       * web/opencv_worker.js ile
-       * web/opencv.js aynı klasörde.
-       */
-      importScripts(
-        'opencv.js'
+      throw new Error(
+        'OPENCV_RUNTIME_TIMEOUT'
       );
     } catch (error) {
-      fail(
-        new Error(
-          'OPENCV_IMPORT_FAILED: ' +
-          (
-            error &&
-            error.message
-              ? error.message
-              : String(error)
-          )
+      cvReadyPromise = null;
+
+      throw new Error(
+        'OPENCV_INIT_FAILED: ' +
+        (
+          error && error.message
+            ? error.message
+            : String(error)
         )
       );
-
-      return;
     }
+  })();
 
-
-    try {
-      const candidate =
-        self.cv;
-
-      /*
-       * OpenCV'nin yeni sürümlerinde cv
-       * Promise olabilir.
-       */
-      if (
-        candidate &&
-        typeof candidate.then ===
-          'function'
-      ) {
-        candidate
-          .then((readyCv) => {
-            success(readyCv);
-          })
-          .catch((error) => {
-            fail(
-              new Error(
-                'OPENCV_PROMISE_FAILED: ' +
-                (
-                  error &&
-                  error.message
-                    ? error.message
-                    : String(error)
-                )
-              )
-            );
-          });
-
-        return;
-      }
-
-
-      /*
-       * Bazı buildlerde importScripts
-       * döndüğü anda zaten hazırdır.
-       */
-      success(candidate);
-
-    } catch (error) {
-      fail(error);
-    }
-  });
-
-
-  return cvReadyPromise.catch(
-    (error) => {
-      cvReadyPromise = null;
-      throw error;
-    }
-  );
+  return cvReadyPromise;
 }
 
 
