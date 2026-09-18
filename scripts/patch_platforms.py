@@ -343,8 +343,7 @@ manifest = Path(
 
 if manifest.exists():
 
-    text =
-        manifest.read_text(
+    text = manifest.read_text(
             encoding="utf-8"
         )
 
@@ -371,8 +370,7 @@ if manifest.exists():
 
     if additions:
 
-        manifest_end =
-            text.find(
+        manifest_end = text.find(
                 ">"
             )
 
@@ -406,8 +404,7 @@ plist = Path(
 
 if plist.exists():
 
-    text =
-        plist.read_text(
+    text = plist.read_text(
             encoding="utf-8"
         )
 
@@ -426,8 +423,7 @@ if plist.exists():
         not in text
     ):
 
-        text =
-            text.replace(
+        text = text.replace(
                 "</dict>",
                 additions
                 + "\n</dict>",
@@ -468,8 +464,7 @@ if web_dir.exists():
 
     if web_index.exists():
 
-        final_html =
-            web_index.read_text(
+        final_html = web_index.read_text(
                 encoding="utf-8"
             )
 
