@@ -61,7 +61,7 @@ class ScannerService {
     return ScanResultData(
       scannedBytes: scanned.bytes,
       originalBytes: originalBytes,
-      confidence: corners.confidence,
+      confidence: corners.confidence ?? 0.0,
     );
   }
 }
