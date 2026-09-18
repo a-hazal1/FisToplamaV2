@@ -112,5 +112,12 @@
 
   window.receiptScanner = {
     scan: scan
+  // Sayfa açılır açılmaz Worker'ı arka planda hazırla.
+  // OpenCV ana thread'i kilitlemez.
+  try {
+    createWorker();
+  } catch (e) {
+    console.error('Scanner worker ön yükleme hatası:', e);
+  }
   };
 })();
