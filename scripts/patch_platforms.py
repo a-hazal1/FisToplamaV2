@@ -18,26 +18,31 @@ if web_index.exists():
         encoding="utf-8"
     )
 
-    # Daha önce eklenen eski scanner/OpenCV scriptlerini temizle
+    # Eski OpenCV eklemelerini temizle
+    html = html.replace(
+        '<script src="opencv.js"></script>',
+        '',
+    )
+
     html = html.replace(
         '<script src="opencv_receipt.js"></script>',
         '',
     )
 
     html = html.replace(
-        '<script src="opencv.js"></script>',
+        '<script src="https://docs.opencv.org/4.10.0/opencv.js"></script>',
         '',
     )
 
-    # Önce yerel OpenCV, sonra bizim scanner
-    scripts = """
-  <script src="opencv.js"></script>
+    # Sadece scanner köprüsünü ekle.
+    # OpenCV gerekince scanner tarafından yüklenecek.
+    scanner_tag = """
   <script src="opencv_receipt.js"></script>
 """
 
     html = html.replace(
         "</body>",
-        scripts + "\n</body>",
+        scanner_tag + "\n</body>",
     )
 
     web_index.write_text(
