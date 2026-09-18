@@ -193,7 +193,7 @@
         new cv.Rect(0, 0, 1, 1),
         bgModel,
         fgModel,
-        2,
+        1,
         cv.GC_INIT_WITH_MASK
       );
 
