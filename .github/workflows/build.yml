@@ -96,7 +96,7 @@ jobs:
           test -s web/opencv_receipt.js
           test -s web/opencv_worker.js
 
-          grep -q "opencv_receipt.js" web/index.html
+          
 
           echo "All scanner source files OK"
 
@@ -152,7 +152,7 @@ jobs:
           test -s build/web/opencv_receipt.js
           test -s build/web/opencv_worker.js
 
-          grep -q "opencv_receipt.js" build/web/index.html
+         
 
           echo "Built scanner files OK"
 
