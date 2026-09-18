@@ -65,14 +65,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Download OpenCV locally
-        run: |
-          curl \
-            -L \
-            --retry 3 \
-            --retry-delay 2 \
-            --fail \
-            https://docs.opencv.org/4.x/opencv.js \
-            -o web/opencv.js
+        run: curl -L --retry 3 --retry-delay 2 --fail https://docs.opencv.org/4.10.0/opencv.js -o web/opencv.js
 
 
       # -------------------------------------------------------
