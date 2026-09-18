@@ -10,28 +10,43 @@ permissions:
 jobs:
   android-web:
     runs-on: ubuntu-latest
+  
     steps:
       - uses: actions/checkout@v4
+  
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+  
+      - name: Create Flutter platforms
+        run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=android,web .
+  
       - name: Download OpenCV.js
         run: curl -L --fail https://docs.opencv.org/4.x/opencv.js -o web/opencv.js
-      - run: python scripts/patch_platforms.py
-      - run: flutter pub get
+  
+      - name: Patch platforms
+        run: python scripts/patch_platforms.py
+  
+      - name: Flutter pub get
+        run: flutter pub get
+  
       - name: Build Android APK
         run: flutter build apk --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+  
       - name: Build Web
         run: flutter build web --release --base-href "/${{ github.event.repository.name }}/" --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+  
       - uses: actions/upload-artifact@v4
         with:
           name: FisToplama-Pro-Android
           path: build/app/outputs/flutter-apk/app-release.apk
+  
       - uses: actions/upload-artifact@v4
         with:
           name: FisToplama-Pro-Web
           path: build/web
+  
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
