@@ -1,104 +1,284 @@
 let cvReadyPromise = null;
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
-async function getCv() {
-  if (cvReadyPromise) return cvReadyPromise;
+/* =========================================================
+   OPENCV BAŞLATMA
+   ========================================================= */
 
-  cvReadyPromise = (async () => {
-    if (!self.cv) {
-      importScripts('opencv.js');
-    }
+function getCv() {
+  if (cvReadyPromise) {
+    return cvReadyPromise;
+  }
 
-    let candidate = self.cv;
+  cvReadyPromise = new Promise((resolve, reject) => {
+    let finished = false;
 
-    if (candidate && typeof candidate.then === 'function') {
-      candidate = await candidate;
-      self.cv = candidate;
-    }
+    const timeout = setTimeout(() => {
+      if (finished) return;
 
-    const startedAt = Date.now();
+      finished = true;
 
-    while (
-      (!candidate || typeof candidate.Mat !== 'function') &&
-      Date.now() - startedAt < 15000
-    ) {
-      await sleep(100);
-      candidate = self.cv;
+      reject(
+        new Error(
+          'OPENCV_INIT_TIMEOUT'
+        )
+      );
+    }, 30000);
 
-      if (candidate && typeof candidate.then === 'function') {
-        candidate = await candidate;
+
+    function success(candidate) {
+      if (finished) return;
+
+      if (
+        candidate &&
+        typeof candidate.Mat === 'function'
+      ) {
+        finished = true;
+
+        clearTimeout(timeout);
+
         self.cv = candidate;
+
+        resolve(candidate);
       }
     }
 
-    if (!candidate || typeof candidate.Mat !== 'function') {
-      throw new Error('OPENCV_RUNTIME_TIMEOUT');
+
+    function fail(error) {
+      if (finished) return;
+
+      finished = true;
+
+      clearTimeout(timeout);
+
+      reject(error);
     }
 
-    return candidate;
-  })();
 
-  try {
-    return await cvReadyPromise;
-  } catch (error) {
-    cvReadyPromise = null;
-    throw error;
-  }
+    /*
+     * OpenCV'nin klasik Emscripten
+     * runtime callback mekanizması.
+     */
+    self.Module = {
+      onRuntimeInitialized: function () {
+        try {
+          success(self.cv);
+        } catch (error) {
+          fail(error);
+        }
+      }
+    };
+
+
+    try {
+      /*
+       * web/opencv_worker.js ile
+       * web/opencv.js aynı klasörde.
+       */
+      importScripts(
+        'opencv.js'
+      );
+    } catch (error) {
+      fail(
+        new Error(
+          'OPENCV_IMPORT_FAILED: ' +
+          (
+            error &&
+            error.message
+              ? error.message
+              : String(error)
+          )
+        )
+      );
+
+      return;
+    }
+
+
+    try {
+      const candidate =
+        self.cv;
+
+      /*
+       * OpenCV'nin yeni sürümlerinde cv
+       * Promise olabilir.
+       */
+      if (
+        candidate &&
+        typeof candidate.then ===
+          'function'
+      ) {
+        candidate
+          .then((readyCv) => {
+            success(readyCv);
+          })
+          .catch((error) => {
+            fail(
+              new Error(
+                'OPENCV_PROMISE_FAILED: ' +
+                (
+                  error &&
+                  error.message
+                    ? error.message
+                    : String(error)
+                )
+              )
+            );
+          });
+
+        return;
+      }
+
+
+      /*
+       * Bazı buildlerde importScripts
+       * döndüğü anda zaten hazırdır.
+       */
+      success(candidate);
+
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+
+  return cvReadyPromise.catch(
+    (error) => {
+      cvReadyPromise = null;
+      throw error;
+    }
+  );
 }
+
+
+/* =========================================================
+   YARDIMCI FONKSİYONLAR
+   ========================================================= */
 
 function distance(a, b) {
-  return Math.hypot(a[0] - b[0], a[1] - b[1]);
+  return Math.hypot(
+    a[0] - b[0],
+    a[1] - b[1]
+  );
 }
+
 
 function orderPoints(points) {
-  const sums = points.map((p) => p[0] + p[1]);
-  const diffs = points.map((p) => p[0] - p[1]);
+  const sums =
+    points.map(
+      (p) =>
+        p[0] + p[1]
+    );
 
-  const tl = points[sums.indexOf(Math.min(...sums))];
-  const br = points[sums.indexOf(Math.max(...sums))];
-  const tr = points[diffs.indexOf(Math.max(...diffs))];
-  const bl = points[diffs.indexOf(Math.min(...diffs))];
+  const diffs =
+    points.map(
+      (p) =>
+        p[0] - p[1]
+    );
 
-  return [tl, tr, br, bl];
+
+  const tl =
+    points[
+      sums.indexOf(
+        Math.min(...sums)
+      )
+    ];
+
+
+  const br =
+    points[
+      sums.indexOf(
+        Math.max(...sums)
+      )
+    ];
+
+
+  const tr =
+    points[
+      diffs.indexOf(
+        Math.max(...diffs)
+      )
+    ];
+
+
+  const bl =
+    points[
+      diffs.indexOf(
+        Math.min(...diffs)
+      )
+    ];
+
+
+  return [
+    tl,
+    tr,
+    br,
+    bl
+  ];
 }
 
-function findBestQuad(cv, src) {
-  const gray = new cv.Mat();
-  const blurred = new cv.Mat();
-  const edges = new cv.Mat();
-  const contours = new cv.MatVector();
-  const hierarchy = new cv.Mat();
+
+/* =========================================================
+   FİŞ KENARLARINI BUL
+   ========================================================= */
+
+function detectReceipt(
+  cv,
+  src
+) {
+  const gray =
+    new cv.Mat();
+
+  const blur =
+    new cv.Mat();
+
+  const edges =
+    new cv.Mat();
+
+  const contours =
+    new cv.MatVector();
+
+  const hierarchy =
+    new cv.Mat();
+
 
   let bestPoints = null;
   let bestArea = 0;
 
+
   try {
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(
+      src,
+      gray,
+      cv.COLOR_RGBA2GRAY
+    );
+
 
     cv.GaussianBlur(
       gray,
-      blurred,
+      blur,
       new cv.Size(5, 5),
       0,
       0,
       cv.BORDER_DEFAULT
     );
 
+
     cv.Canny(
-      blurred,
+      blur,
       edges,
       40,
       140
     );
 
-    const kernel = cv.Mat.ones(
-      3,
-      3,
-      cv.CV_8U
-    );
+
+    const kernel =
+      cv.Mat.ones(
+        3,
+        3,
+        cv.CV_8U
+      );
+
 
     cv.dilate(
       edges,
@@ -108,7 +288,9 @@ function findBestQuad(cv, src) {
       1
     );
 
+
     kernel.delete();
+
 
     cv.findContours(
       edges,
@@ -118,11 +300,16 @@ function findBestQuad(cv, src) {
       cv.CHAIN_APPROX_SIMPLE
     );
 
-    const imageArea =
-      src.cols * src.rows;
 
-    const minArea =
-      imageArea * 0.02;
+    const imageArea =
+      src.cols *
+      src.rows;
+
+
+    const minimumArea =
+      imageArea *
+      0.02;
+
 
     const tolerances = [
       0.01,
@@ -130,8 +317,10 @@ function findBestQuad(cv, src) {
       0.02,
       0.025,
       0.03,
-      0.04
+      0.04,
+      0.05
     ];
+
 
     for (
       let i = 0;
@@ -141,6 +330,7 @@ function findBestQuad(cv, src) {
       const contour =
         contours.get(i);
 
+
       try {
         const area =
           Math.abs(
@@ -149,12 +339,16 @@ function findBestQuad(cv, src) {
             )
           );
 
+
         if (
-          area < minArea ||
-          area <= bestArea
+          area <
+            minimumArea ||
+          area <=
+            bestArea
         ) {
           continue;
         }
+
 
         const perimeter =
           cv.arcLength(
@@ -162,12 +356,14 @@ function findBestQuad(cv, src) {
             true
           );
 
+
         for (
           const tolerance
           of tolerances
         ) {
           const approx =
             new cv.Mat();
+
 
           try {
             cv.approxPolyDP(
@@ -178,6 +374,7 @@ function findBestQuad(cv, src) {
               true
             );
 
+
             if (
               approx.rows === 4 &&
               cv.isContourConvex(
@@ -185,6 +382,7 @@ function findBestQuad(cv, src) {
               )
             ) {
               const points = [];
+
 
               for (
                 let p = 0;
@@ -197,9 +395,10 @@ function findBestQuad(cv, src) {
                   ],
                   approx.data32S[
                     p * 2 + 1
-                  ],
+                  ]
                 ]);
               }
+
 
               bestPoints =
                 points;
@@ -209,28 +408,42 @@ function findBestQuad(cv, src) {
 
               break;
             }
+
           } finally {
             approx.delete();
           }
         }
+
       } finally {
         contour.delete();
       }
     }
 
+
     return {
-      points: bestPoints,
-      area: bestArea,
-      imageArea: imageArea,
+      points:
+        bestPoints,
+
+      area:
+        bestArea,
+
+      imageArea:
+        imageArea
     };
+
   } finally {
     gray.delete();
-    blurred.delete();
+    blur.delete();
     edges.delete();
     contours.delete();
     hierarchy.delete();
   }
 }
+
+
+/* =========================================================
+   FOTOĞRAFI İŞLE
+   ========================================================= */
 
 async function processReceipt(
   inputBuffer
@@ -238,17 +451,25 @@ async function processReceipt(
   const cv =
     await getCv();
 
+
   const blob =
     new Blob(
       [inputBuffer]
     );
+
 
   const bitmap =
     await createImageBitmap(
       blob
     );
 
+
+  /*
+   * Kenar bulma için 800-900 px
+   * yeterli.
+   */
   const maxSide = 900;
+
 
   const scale =
     Math.min(
@@ -260,6 +481,7 @@ async function processReceipt(
         )
     );
 
+
   const width =
     Math.max(
       1,
@@ -268,6 +490,7 @@ async function processReceipt(
           scale
       )
     );
+
 
   const height =
     Math.max(
@@ -278,21 +501,25 @@ async function processReceipt(
       )
     );
 
+
   const canvas =
     new OffscreenCanvas(
       width,
       height
     );
 
-  const ctx =
+
+  const context =
     canvas.getContext(
       '2d',
       {
-        willReadFrequently: true
+        willReadFrequently:
+          true
       }
     );
 
-  if (!ctx) {
+
+  if (!context) {
     bitmap.close();
 
     throw new Error(
@@ -300,7 +527,8 @@ async function processReceipt(
     );
   }
 
-  ctx.drawImage(
+
+  context.drawImage(
     bitmap,
     0,
     0,
@@ -308,33 +536,43 @@ async function processReceipt(
     height
   );
 
+
   bitmap.close();
 
+
   const imageData =
-    ctx.getImageData(
+    context.getImageData(
       0,
       0,
       width,
       height
     );
 
+
+  /*
+   * OpenCV'nin resmi JS API'sinde
+   * ImageData -> Mat dönüşümü.
+   */
   const src =
     cv.matFromImageData(
       imageData
     );
 
+
   try {
     const detection =
-      findBestQuad(
+      detectReceipt(
         cv,
         src
       );
+
 
     if (!detection.points) {
       throw new Error(
         'NO_DOCUMENT'
       );
     }
+
 
     const [
       tl,
@@ -346,7 +584,8 @@ async function processReceipt(
         detection.points
       );
 
-    const outWidth =
+
+    const outputWidth =
       Math.max(
         220,
         Math.round(
@@ -363,7 +602,8 @@ async function processReceipt(
         )
       );
 
-    const outHeight =
+
+    const outputHeight =
       Math.max(
         320,
         Math.round(
@@ -379,6 +619,7 @@ async function processReceipt(
           )
         )
       );
+
 
     const sourcePoints =
       cv.matFromArray(
@@ -396,11 +637,12 @@ async function processReceipt(
           br[1],
 
           bl[0],
-          bl[1],
+          bl[1]
         ]
       );
 
-    const destinationPoints =
+
+    const targetPoints =
       cv.matFromArray(
         4,
         1,
@@ -409,100 +651,120 @@ async function processReceipt(
           0,
           0,
 
-          outWidth - 1,
+          outputWidth - 1,
           0,
 
-          outWidth - 1,
-          outHeight - 1,
+          outputWidth - 1,
+          outputHeight - 1,
 
           0,
-          outHeight - 1,
+          outputHeight - 1
         ]
       );
 
-    const transform =
+
+    const matrix =
       cv.getPerspectiveTransform(
         sourcePoints,
-        destinationPoints
+        targetPoints
       );
+
 
     const warped =
       new cv.Mat();
 
+
     try {
+      /*
+       * Perspektif düzeltme.
+       */
       cv.warpPerspective(
         src,
         warped,
-        transform,
+        matrix,
         new cv.Size(
-          outWidth,
-          outHeight
+          outputWidth,
+          outputHeight
         ),
         cv.INTER_LINEAR,
         cv.BORDER_REPLICATE,
         new cv.Scalar()
       );
 
+
       const gray =
         new cv.Mat();
 
-      const finalImage =
+      const resultMat =
         new cv.Mat();
 
+
       try {
+        /*
+         * Scanner görünümü.
+         */
         cv.cvtColor(
           warped,
           gray,
           cv.COLOR_RGBA2GRAY
         );
 
+
         cv.equalizeHist(
           gray,
           gray
         );
 
+
         cv.cvtColor(
           gray,
-          finalImage,
+          resultMat,
           cv.COLOR_GRAY2RGBA
         );
 
+
         const outputCanvas =
           new OffscreenCanvas(
-            outWidth,
-            outHeight
+            outputWidth,
+            outputHeight
           );
+
 
         const outputContext =
           outputCanvas.getContext(
             '2d'
           );
 
+
         if (!outputContext) {
           throw new Error(
-            'OUTPUT_CANVAS_CONTEXT_FAILED'
+            'OUTPUT_CONTEXT_FAILED'
           );
         }
 
-        const pixels =
+
+        const pixelCopy =
           new Uint8ClampedArray(
-            finalImage.data
+            resultMat.data
           );
 
-        const outputImageData =
+
+        const resultImage =
           new ImageData(
-            pixels,
-            outWidth,
-            outHeight
+            pixelCopy,
+            outputWidth,
+            outputHeight
           );
+
 
         outputContext.putImageData(
-          outputImageData,
+          resultImage,
           0,
           0
         );
 
-        const outputBlob =
+
+        const resultBlob =
           await outputCanvas
             .convertToBlob({
               type:
@@ -512,13 +774,15 @@ async function processReceipt(
                 0.92
             });
 
-        const outputBuffer =
-          await outputBlob
+
+        const resultBuffer =
+          await resultBlob
             .arrayBuffer();
+
 
         return {
           buffer:
-            outputBuffer,
+            resultBuffer,
 
           confidence:
             Math.min(
@@ -528,28 +792,37 @@ async function processReceipt(
                 detection.area /
                   detection.imageArea
               )
-            ),
+            )
         };
+
       } finally {
         gray.delete();
-        finalImage.delete();
+        resultMat.delete();
       }
+
     } finally {
       sourcePoints.delete();
-      destinationPoints.delete();
-      transform.delete();
+      targetPoints.delete();
+      matrix.delete();
       warped.delete();
     }
+
   } finally {
     src.delete();
   }
 }
 
+
+/* =========================================================
+   WORKER MESAJLARI
+   ========================================================= */
+
 self.onmessage =
-  async function (event) {
+  async function(event) {
 
     const message =
       event.data;
+
 
     if (
       !message ||
@@ -559,10 +832,18 @@ self.onmessage =
       return;
     }
 
+
     const id =
       message.id;
 
+
     try {
+      /*
+       * İlk OpenCV initialization dahil
+       * maksimum 40 saniye.
+       *
+       * Sonraki fişler çok daha hızlı olur.
+       */
       const result =
         await Promise.race([
           processReceipt(
@@ -578,34 +859,69 @@ self.onmessage =
                       'SCAN_TIMEOUT'
                     )
                   ),
-                20000
+                40000
               )
-          ),
+          )
         ]);
+
 
       self.postMessage(
         {
-          id: id,
-          ok: true,
+          id:
+            id,
+
+          ok:
+            true,
+
           buffer:
             result.buffer,
+
           confidence:
-            result.confidence,
+            result.confidence
         },
         [
           result.buffer
         ]
       );
+
     } catch (error) {
+
       self.postMessage({
-        id: id,
-        ok: false,
+        id:
+          id,
+
+        ok:
+          false,
 
         error:
           error &&
           error.message
             ? error.message
-            : String(error),
+            : String(error)
       });
+
     }
   };
+
+
+/*
+ * Worker oluşturulduğu anda OpenCV'yi
+ * arka planda hazırlamaya başla.
+ */
+getCv()
+  .then(() => {
+    self.postMessage({
+      type: 'opencv-ready'
+    });
+  })
+  .catch((error) => {
+    self.postMessage({
+      type: 'opencv-error',
+
+      error:
+        error &&
+        error.message
+          ? error.message
+          : String(error)
+    });
+  });
