@@ -16,7 +16,8 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=android,web .
+      - name: Download OpenCV.js
+        run: curl -L --fail https://docs.opencv.org/4.x/opencv.js -o web/opencv.js
       - run: python scripts/patch_platforms.py
       - run: flutter pub get
       - name: Build Android APK
