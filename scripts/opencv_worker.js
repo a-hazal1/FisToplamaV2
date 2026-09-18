@@ -390,7 +390,7 @@ async function processReceipt(
    * Telefon fotoğrafının 4000px olması
    * gereksiz CPU/RAM harcatıyordu.
    */
-  const maxSide = 1200;
+  const maxSide =900;
 
   const scale =
     Math.min(
