@@ -1,10 +1,7 @@
 let cvReadyPromise = null;
 
 function sleep(ms) {
-  return new Promise(
-    (resolve) =>
-      setTimeout(resolve, ms)
-  );
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function getCv() {
@@ -12,85 +9,62 @@ async function getCv() {
     return cvReadyPromise;
   }
 
-  cvReadyPromise = (async function () {
+  cvReadyPromise = (async () => {
     try {
-      /*
-       * OpenCV artık ana sayfada çalışmıyor.
-       * Worker kendi yerel opencv.js dosyasını yüklüyor.
-       */
       if (!self.cv) {
         importScripts('opencv.js');
       }
 
-      let candidate =
-        self.cv;
+      const startedAt = Date.now();
+      const timeoutMs = 15000;
 
-      /*
-       * Yeni OpenCV.js sürümlerinde
-       * cv Promise olabilir.
-       */
-      if (
-        candidate &&
-        typeof candidate.then === 'function'
-      ) {
-        candidate =
-          await candidate;
+      while (Date.now() - startedAt < timeoutMs) {
+        let candidate = self.cv;
 
-        self.cv =
-          candidate;
-      }
+        if (candidate) {
+          if (typeof candidate.then === 'function') {
+            try {
+              candidate = await Promise.race([
+                candidate,
+                new Promise((_, reject) =>
+                  setTimeout(
+                    () => reject(
+                      new Error('OPENCV_PROMISE_TIMEOUT')
+                    ),
+                    10000
+                  )
+                ),
+              ]);
 
-      const startedAt =
-        Date.now();
+              self.cv = candidate;
+            } catch (e) {
+              throw new Error(
+                'OPENCV_INIT_FAILED: ' +
+                (e?.message ?? e)
+              );
+            }
+          }
 
-      while (
-        (
-          !candidate ||
-          typeof candidate.Mat !==
-            'function'
-        ) &&
-        Date.now() - startedAt <
-          30000
-      ) {
-        await sleep(100);
-
-        candidate =
-          self.cv;
-
-        if (
-          candidate &&
-          typeof candidate.then ===
-            'function'
-        ) {
-          candidate =
-            await candidate;
-
-          self.cv =
-            candidate;
+          if (
+            candidate &&
+            typeof candidate.Mat === 'function'
+          ) {
+            return candidate;
+          }
         }
+
+        await sleep(100);
       }
 
-      if (
-        !candidate ||
-        typeof candidate.Mat !==
-          'function'
-      ) {
-        throw new Error(
-          'OPENCV_RUNTIME_TIMEOUT'
-        );
-      }
-
-      return candidate;
+      throw new Error('OPENCV_RUNTIME_TIMEOUT');
     } catch (error) {
       cvReadyPromise = null;
-
       throw error;
     }
   })();
 
   return cvReadyPromise;
 }
-
 function distance(a, b) {
   return Math.hypot(
     a[0] - b[0],
