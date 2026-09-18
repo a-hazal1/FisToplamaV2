@@ -5,155 +5,79 @@ function sleep(ms) {
 }
 
 async function getCv() {
-  if (cvReadyPromise) {
-    return cvReadyPromise;
-  }
+  if (cvReadyPromise) return cvReadyPromise;
 
   cvReadyPromise = (async () => {
-    try {
-      if (!self.cv) {
-        importScripts('opencv.js');
-      }
-
-      const startedAt = Date.now();
-      const timeoutMs = 15000;
-
-      while (Date.now() - startedAt < timeoutMs) {
-        let candidate = self.cv;
-
-        if (candidate) {
-          if (typeof candidate.then === 'function') {
-            try {
-              candidate = await Promise.race([
-                candidate,
-                new Promise((_, reject) =>
-                  setTimeout(
-                    () => reject(
-                      new Error('OPENCV_PROMISE_TIMEOUT')
-                    ),
-                    10000
-                  )
-                ),
-              ]);
-
-              self.cv = candidate;
-            } catch (e) {
-              throw new Error(
-                'OPENCV_INIT_FAILED: ' +
-                (e?.message ?? e)
-              );
-            }
-          }
-
-          if (
-            candidate &&
-            typeof candidate.Mat === 'function'
-          ) {
-            return candidate;
-          }
-        }
-
-        await sleep(100);
-      }
-
-      throw new Error('OPENCV_RUNTIME_TIMEOUT');
-    } catch (error) {
-      cvReadyPromise = null;
-      throw error;
+    if (!self.cv) {
+      importScripts('opencv.js');
     }
+
+    let candidate = self.cv;
+
+    if (candidate && typeof candidate.then === 'function') {
+      candidate = await candidate;
+      self.cv = candidate;
+    }
+
+    const startedAt = Date.now();
+
+    while (
+      (!candidate || typeof candidate.Mat !== 'function') &&
+      Date.now() - startedAt < 15000
+    ) {
+      await sleep(100);
+      candidate = self.cv;
+
+      if (candidate && typeof candidate.then === 'function') {
+        candidate = await candidate;
+        self.cv = candidate;
+      }
+    }
+
+    if (!candidate || typeof candidate.Mat !== 'function') {
+      throw new Error('OPENCV_RUNTIME_TIMEOUT');
+    }
+
+    return candidate;
   })();
 
-  return cvReadyPromise;
+  try {
+    return await cvReadyPromise;
+  } catch (error) {
+    cvReadyPromise = null;
+    throw error;
+  }
 }
+
 function distance(a, b) {
-  return Math.hypot(
-    a[0] - b[0],
-    a[1] - b[1]
-  );
+  return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
 
 function orderPoints(points) {
-  const sums =
-    points.map(
-      (p) => p[0] + p[1]
-    );
+  const sums = points.map((p) => p[0] + p[1]);
+  const diffs = points.map((p) => p[0] - p[1]);
 
-  const diffs =
-    points.map(
-      (p) => p[0] - p[1]
-    );
+  const tl = points[sums.indexOf(Math.min(...sums))];
+  const br = points[sums.indexOf(Math.max(...sums))];
+  const tr = points[diffs.indexOf(Math.max(...diffs))];
+  const bl = points[diffs.indexOf(Math.min(...diffs))];
 
-  const tl =
-    points[
-      sums.indexOf(
-        Math.min(...sums)
-      )
-    ];
-
-  const br =
-    points[
-      sums.indexOf(
-        Math.max(...sums)
-      )
-    ];
-
-  const tr =
-    points[
-      diffs.indexOf(
-        Math.max(...diffs)
-      )
-    ];
-
-  const bl =
-    points[
-      diffs.indexOf(
-        Math.min(...diffs)
-      )
-    ];
-
-  return [
-    tl,
-    tr,
-    br,
-    bl
-  ];
+  return [tl, tr, br, bl];
 }
 
-function findReceipt(
-  cv,
-  src
-) {
-  const gray =
-    new cv.Mat();
-
-  const blurred =
-    new cv.Mat();
-
-  const edges =
-    new cv.Mat();
-
-  const contours =
-    new cv.MatVector();
-
-  const hierarchy =
-    new cv.Mat();
+function findBestQuad(cv, src) {
+  const gray = new cv.Mat();
+  const blurred = new cv.Mat();
+  const edges = new cv.Mat();
+  const contours = new cv.MatVector();
+  const hierarchy = new cv.Mat();
 
   let bestPoints = null;
   let bestArea = 0;
 
   try {
-    /*
-     * Gri tonlama
-     */
-    cv.cvtColor(
-      src,
-      gray,
-      cv.COLOR_RGBA2GRAY
-    );
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    /*
-     * Gürültüyü azalt
-     */
     cv.GaussianBlur(
       gray,
       blurred,
@@ -163,40 +87,29 @@ function findReceipt(
       cv.BORDER_DEFAULT
     );
 
-    /*
-     * Kenarlar
-     */
     cv.Canny(
       blurred,
       edges,
-      35,
-      135
+      40,
+      140
     );
 
-    /*
-     * Fiş kenarındaki küçük
-     * kopuklukları birleştir.
-     */
-    const kernel =
-      cv.Mat.ones(
-        3,
-        3,
-        cv.CV_8U
-      );
+    const kernel = cv.Mat.ones(
+      3,
+      3,
+      cv.CV_8U
+    );
 
     cv.dilate(
       edges,
       edges,
       kernel,
       new cv.Point(-1, -1),
-      2
+      1
     );
 
     kernel.delete();
 
-    /*
-     * Konturlar
-     */
     cv.findContours(
       edges,
       contours,
@@ -206,28 +119,18 @@ function findReceipt(
     );
 
     const imageArea =
-      src.cols *
-      src.rows;
+      src.cols * src.rows;
 
-    /*
-     * Fiş fotoğraf içerisinde
-     * küçük olsa bile dene.
-     */
     const minArea =
-      imageArea *
-      0.015;
+      imageArea * 0.02;
 
     const tolerances = [
-      0.008,
       0.01,
-      0.012,
       0.015,
-      0.018,
       0.02,
       0.025,
       0.03,
-      0.04,
-      0.05
+      0.04
     ];
 
     for (
@@ -247,10 +150,8 @@ function findReceipt(
           );
 
         if (
-          area <
-            minArea ||
-          area <=
-            bestArea
+          area < minArea ||
+          area <= bestArea
         ) {
           continue;
         }
@@ -285,10 +186,6 @@ function findReceipt(
             ) {
               const points = [];
 
-              /*
-               * approx:
-               * [x1,y1,x2,y2...]
-               */
               for (
                 let p = 0;
                 p < 4;
@@ -300,7 +197,7 @@ function findReceipt(
                   ],
                   approx.data32S[
                     p * 2 + 1
-                  ]
+                  ],
                 ]);
               }
 
@@ -322,14 +219,9 @@ function findReceipt(
     }
 
     return {
-      points:
-        bestPoints,
-
-      area:
-        bestArea,
-
-      imageArea:
-        imageArea
+      points: bestPoints,
+      area: bestArea,
+      imageArea: imageArea,
     };
   } finally {
     gray.delete();
@@ -346,9 +238,6 @@ async function processReceipt(
   const cv =
     await getCv();
 
-  /*
-   * Fotoğrafı Worker içinde aç.
-   */
   const blob =
     new Blob(
       [inputBuffer]
@@ -359,12 +248,7 @@ async function processReceipt(
       blob
     );
 
-  /*
-   * Kenar tespiti için 1200px yeterli.
-   * Telefon fotoğrafının 4000px olması
-   * gereksiz CPU/RAM harcatıyordu.
-   */
-  const maxSide =900;
+  const maxSide = 900;
 
   const scale =
     Math.min(
@@ -394,10 +278,6 @@ async function processReceipt(
       )
     );
 
-  /*
-   * Worker'da HTML Canvas yerine
-   * OffscreenCanvas kullanıyoruz.
-   */
   const canvas =
     new OffscreenCanvas(
       width,
@@ -438,11 +318,6 @@ async function processReceipt(
       height
     );
 
-  /*
-   * cv.imread(OffscreenCanvas)
-   * yerine doğrudan ImageData
-   * kullanıyoruz.
-   */
   const src =
     cv.matFromImageData(
       imageData
@@ -450,7 +325,7 @@ async function processReceipt(
 
   try {
     const detection =
-      findReceipt(
+      findBestQuad(
         cv,
         src
       );
@@ -461,22 +336,15 @@ async function processReceipt(
       );
     }
 
-    const ordered =
+    const [
+      tl,
+      tr,
+      br,
+      bl
+    ] =
       orderPoints(
         detection.points
       );
-
-    const tl =
-      ordered[0];
-
-    const tr =
-      ordered[1];
-
-    const br =
-      ordered[2];
-
-    const bl =
-      ordered[3];
 
     const outWidth =
       Math.max(
@@ -528,7 +396,7 @@ async function processReceipt(
           br[1],
 
           bl[0],
-          bl[1]
+          bl[1],
         ]
       );
 
@@ -548,7 +416,7 @@ async function processReceipt(
           outHeight - 1,
 
           0,
-          outHeight - 1
+          outHeight - 1,
         ]
       );
 
@@ -562,9 +430,6 @@ async function processReceipt(
       new cv.Mat();
 
     try {
-      /*
-       * Perspektif düzeltme
-       */
       cv.warpPerspective(
         src,
         warped,
@@ -578,9 +443,6 @@ async function processReceipt(
         new cv.Scalar()
       );
 
-      /*
-       * Tarayıcı görünümü.
-       */
       const gray =
         new cv.Mat();
 
@@ -605,21 +467,6 @@ async function processReceipt(
           cv.COLOR_GRAY2RGBA
         );
 
-        /*
-         * OpenCV Mat -> ImageData
-         */
-        const resultPixels =
-          new Uint8ClampedArray(
-            finalImage.data
-          );
-
-        const resultImageData =
-          new ImageData(
-            resultPixels,
-            outWidth,
-            outHeight
-          );
-
         const outputCanvas =
           new OffscreenCanvas(
             outWidth,
@@ -631,15 +478,30 @@ async function processReceipt(
             '2d'
           );
 
+        if (!outputContext) {
+          throw new Error(
+            'OUTPUT_CANVAS_CONTEXT_FAILED'
+          );
+        }
+
+        const pixels =
+          new Uint8ClampedArray(
+            finalImage.data
+          );
+
+        const outputImageData =
+          new ImageData(
+            pixels,
+            outWidth,
+            outHeight
+          );
+
         outputContext.putImageData(
-          resultImageData,
+          outputImageData,
           0,
           0
         );
 
-        /*
-         * JPEG'e çevir.
-         */
         const outputBlob =
           await outputCanvas
             .convertToBlob({
@@ -647,7 +509,7 @@ async function processReceipt(
                 'image/jpeg',
 
               quality:
-                0.94
+                0.92
             });
 
         const outputBuffer =
@@ -666,7 +528,7 @@ async function processReceipt(
                 detection.area /
                   detection.imageArea
               )
-            )
+            ),
         };
       } finally {
         gray.delete();
@@ -683,9 +545,12 @@ async function processReceipt(
   }
 }
 
-self.onmessage = async function (event) {
-    const message = event.data;
-  
+self.onmessage =
+  async function (event) {
+
+    const message =
+      event.data;
+
     if (
       !message ||
       !message.id ||
@@ -693,47 +558,31 @@ self.onmessage = async function (event) {
     ) {
       return;
     }
-  
-    const id = message.id;
-  
+
+    const id =
+      message.id;
+
     try {
-      const result = await Promise.race([
-        processReceipt(message.buffer),
-  
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(
-              new Error('SCAN_TIMEOUT')
-            ),
-            20000
-          )
-        ),
-      ]);
-  
-      self.postMessage(
-        {
-          id: id,
-          ok: true,
-          buffer: result.buffer,
-          confidence: result.confidence,
-        },
-        [result.buffer]
-      );
-    } catch (error) {
-      self.postMessage({
-        id: id,
-        ok: false,
-        error:
-          error && error.message
-            ? error.message
-            : String(error),
-      });
-    }
-  };
-      /*
-       * ArrayBuffer'ı kopyalamadan
-       * ana thread'e transfer ediyoruz.
-       */
+      const result =
+        await Promise.race([
+          processReceipt(
+            message.buffer
+          ),
+
+          new Promise(
+            (_, reject) =>
+              setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      'SCAN_TIMEOUT'
+                    )
+                  ),
+                20000
+              )
+          ),
+        ]);
+
       self.postMessage(
         {
           id: id,
@@ -741,7 +590,7 @@ self.onmessage = async function (event) {
           buffer:
             result.buffer,
           confidence:
-            result.confidence
+            result.confidence,
         },
         [
           result.buffer
@@ -751,11 +600,12 @@ self.onmessage = async function (event) {
       self.postMessage({
         id: id,
         ok: false,
+
         error:
           error &&
           error.message
             ? error.message
-            : String(error)
+            : String(error),
       });
     }
   };
