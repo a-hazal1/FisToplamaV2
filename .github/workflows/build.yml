@@ -90,20 +90,15 @@ jobs:
 
       - name: Verify scanner source files
         run: |
-          echo "Checking web scanner files..."
-
           test -s web/opencv.js
-          test -s web/opencv_receipt.js
           test -s web/opencv_worker.js
-
-          
-
-          echo "All scanner source files OK"
-
+      
+          grep -q "window.receiptScanner" web/index.html
+      
+          echo "Scanner source files OK"
+      
           ls -lh web/opencv.js
-          ls -lh web/opencv_receipt.js
           ls -lh web/opencv_worker.js
-
 
       # -------------------------------------------------------
       # Dependencies
@@ -146,18 +141,14 @@ jobs:
 
       - name: Verify built scanner files
         run: |
-          echo "Checking build/web scanner files..."
-
           test -s build/web/opencv.js
-          test -s build/web/opencv_receipt.js
           test -s build/web/opencv_worker.js
-
-         
-
+      
+          grep -q "window.receiptScanner" build/web/index.html
+      
           echo "Built scanner files OK"
-
+      
           ls -lh build/web/opencv.js
-          ls -lh build/web/opencv_receipt.js
           ls -lh build/web/opencv_worker.js
 
 
