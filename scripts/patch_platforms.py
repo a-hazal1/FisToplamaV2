@@ -7,12 +7,20 @@ web_index = web_dir / "index.html"
 source_scanner = Path("scripts/opencv_receipt.js")
 target_scanner = web_dir / "opencv_receipt.js"
 
+source_opencv = Path("scripts/opencv.js")
+target_opencv = web_dir / "opencv.js"
+
 if web_dir.exists() and source_scanner.exists():
     shutil.copy2(
         source_scanner,
         target_scanner,
     )
 
+if web_dir.exists() and source_opencv.exists():
+    shutil.copy2(
+        source_opencv,
+        target_opencv,
+    )
 if web_index.exists():
     html = web_index.read_text(
         encoding="utf-8"
