@@ -29,13 +29,13 @@ if web_index.exists():
   <script src="opencv_receipt.js"></script>
 """
 
-    # Önceden eklenmiş scanner scriptini temizle
+    # Eski scanner scriptini temizle
     html = html.replace(
         '<script src="opencv_receipt.js"></script>',
         '',
     )
 
-    # OpenCV scripti daha önce eklenmişse tekrar ekleme
+    # OpenCV daha önce eklenmemişse OpenCV + scanner ekle
     if "docs.opencv.org/4.10.0/opencv.js" not in html:
         html = html.replace(
             "</body>",
@@ -44,6 +44,7 @@ if web_index.exists():
             + "\n</body>",
         )
     else:
+        # OpenCV zaten varsa sadece scanner ekle
         html = html.replace(
             "</body>",
             scanner_tag
@@ -53,23 +54,4 @@ if web_index.exists():
     web_index.write_text(
         html,
         encoding="utf-8",
-    )
-
-    tag = (
-        '<script '
-        'src="opencv_receipt.js">'
-        '</script>'
-    )
-
-    if tag not in html:
-        html = html.replace(
-            "</body>",
-            "  "
-            + tag
-            + "\n</body>",
-        )
-
-    web_index.write_text(
-        html,
-        encoding="utf-8"
     )
