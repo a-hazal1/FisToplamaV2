@@ -65,50 +65,85 @@
   }
 
   function scan(
-    rawBytes,
-    onSuccess,
-    onError
-  ) {
-    try {
-      const activeWorker =
-        createWorker();
+  rawBytes,
+  onSuccess,
+  onError
+) {
+  try {
+    const activeWorker =
+      getWorker();
 
-      const bytes =
-        Uint8Array.from(rawBytes);
+    const bytes =
+      Uint8Array.from(rawBytes);
 
-      const id =
-        'scan_' +
-        Date.now() +
-        '_' +
-        nextId++;
+    const id =
+      'receipt_' +
+      Date.now() +
+      '_' +
+      counter++;
 
-      pending.set(
-        id,
-        {
-          onSuccess,
-          onError
+    const timeout = setTimeout(
+      function () {
+        const request =
+          pending.get(id);
+
+        if (!request) {
+          return;
         }
-      );
 
-      const buffer =
-        bytes.buffer;
+        pending.delete(id);
 
-      activeWorker.postMessage(
-        {
-          id: id,
-          buffer: buffer
-        },
-        [buffer]
-      );
-    } catch (error) {
-      onError(
-        error &&
-        error.message
-          ? error.message
-          : String(error)
-      );
-    }
+        request.onError(
+          'SCAN_TIMEOUT'
+        );
+      },
+      25000
+    );
+
+    pending.set(
+      id,
+      {
+        onSuccess:
+          function (
+            resultBytes,
+            confidence
+          ) {
+            clearTimeout(timeout);
+
+            onSuccess(
+              resultBytes,
+              confidence
+            );
+          },
+
+        onError:
+          function (error) {
+            clearTimeout(timeout);
+
+            onError(error);
+          },
+      }
+    );
+
+    const buffer =
+      bytes.buffer;
+
+    activeWorker.postMessage(
+      {
+        id: id,
+        buffer: buffer,
+      },
+      [buffer]
+    );
+  } catch (error) {
+    onError(
+      error &&
+      error.message
+        ? error.message
+        : String(error)
+    );
   }
+}
 
   window.receiptScanner = {
     scan: scan
