@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'dart:js' as js;
-import 'dart:js_util' as js_util;
 import 'dart:typed_data';
 
 class ScanResultData {
@@ -16,6 +16,7 @@ class ScanResultData {
 
 class ReceiptNotDetectedException implements Exception {
   final String message;
+
   const ReceiptNotDetectedException(this.message);
 
   @override
@@ -26,7 +27,9 @@ class ScannerService {
   Future<ScanResultData> process({
     required String path,
     required Uint8List originalBytes,
-  }) async {
+  }) {
+    final completer = Completer<ScanResultData>();
+
     try {
       final scanner = js.context['receiptScanner'];
 
@@ -36,49 +39,88 @@ class ScannerService {
         );
       }
 
-      final promise = scanner.callMethod(
-        'processReceipt',
-        [List<int>.from(originalBytes)],
+      final onSuccess = js.allowInterop(
+        (dynamic rawBytes, dynamic rawConfidence) {
+          if (completer.isCompleted) return;
+
+          try {
+            final bytes = Uint8List.fromList(
+              List<int>.from(rawBytes),
+            );
+
+            final confidence = rawConfidence is num
+                ? rawConfidence.toDouble()
+                : 0.0;
+
+            completer.complete(
+              ScanResultData(
+                scannedBytes: bytes,
+                originalBytes: originalBytes,
+                confidence: confidence,
+              ),
+            );
+          } catch (e) {
+            completer.completeError(
+              ReceiptNotDetectedException(
+                'Web tarama çıktısı okunamadı: $e',
+              ),
+            );
+          }
+        },
       );
 
-      final dynamic result =
-          await js_util.promiseToFuture<dynamic>(promise);
+      final onError = js.allowInterop((dynamic rawError) {
+        if (completer.isCompleted) return;
 
-      final dynamic rawBytes =
-          js_util.getProperty(result, 'bytes');
+        final text = rawError?.toString() ?? 'Bilinmeyen hata';
 
-      final dynamic rawConfidence =
-          js_util.getProperty(result, 'confidence');
+        if (text.contains('NO_DOCUMENT')) {
+          completer.completeError(
+            const ReceiptNotDetectedException(
+              'Fişin dört kenarı algılanamadı. '
+              'Fişi kontrastlı bir zemine koyup dört köşesi görünür olacak şekilde tekrar dene.',
+            ),
+          );
+          return;
+        }
 
-      final bytes = Uint8List.fromList(
-        List<int>.from(rawBytes as List),
-      );
+        if (text.contains('OPENCV_LOAD')) {
+          completer.completeError(
+            const ReceiptNotDetectedException(
+              'OpenCV web tarama motoru yüklenemedi. '
+              'Sayfayı yenileyip tekrar dene.',
+            ),
+          );
+          return;
+        }
 
-      return ScanResultData(
-        scannedBytes: bytes,
-        originalBytes: originalBytes,
-        confidence: (rawConfidence as num?)?.toDouble() ?? 0.0,
+        completer.completeError(
+          ReceiptNotDetectedException(
+            'Web fiş taraması başarısız: $text',
+          ),
+        );
+      });
+
+      scanner.callMethod(
+        'processReceiptWithCallbacks',
+        [
+          List<int>.from(originalBytes),
+          onSuccess,
+          onError,
+        ],
       );
     } catch (e) {
-      if (e is ReceiptNotDetectedException) rethrow;
-
-      final text = e.toString();
-
-      if (text.contains('NO_DOCUMENT')) {
-        throw const ReceiptNotDetectedException(
-          'Fişin dört kenarı web üzerinde algılanamadı. Fişi kontrastlı bir zeminde, dört köşesi görünür olacak şekilde tekrar seç.',
+      if (!completer.isCompleted) {
+        completer.completeError(
+          e is ReceiptNotDetectedException
+              ? e
+              : ReceiptNotDetectedException(
+                  'Web fiş taraması başlatılamadı: $e',
+                ),
         );
       }
-
-      if (text.contains('OPENCV_LOAD')) {
-        throw const ReceiptNotDetectedException(
-          'OpenCV web tarama motoru yüklenemedi. İnternet bağlantısını kontrol edip sayfayı yenile.',
-        );
-      }
-
-      throw ReceiptNotDetectedException(
-        'Web fiş taraması başarısız: $text',
-      );
     }
+
+    return completer.future;
   }
 }
