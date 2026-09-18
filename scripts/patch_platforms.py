@@ -14,11 +14,15 @@ source_worker = Path(
 )
 
 target_worker = (
-    web_dir / "opencv_worker.js"
+    web_dir /
+    "opencv_worker.js"
 )
 
 
-if web_dir.exists() and source_worker.exists():
+if (
+    web_dir.exists()
+    and source_worker.exists()
+):
     shutil.copy2(
         source_worker,
         target_worker,
@@ -31,21 +35,31 @@ if web_index.exists():
         encoding="utf-8"
     )
 
-    start_marker = "<!-- FISTOPLAMA_SCANNER_START -->"
-    end_marker = "<!-- FISTOPLAMA_SCANNER_END -->"
+    start_marker = (
+        "<!-- FISTOPLAMA_SCANNER_START -->"
+    )
 
-    # Önceden eklenmiş eski bridge'i temizle
-    if start_marker in html and end_marker in html:
+    end_marker = (
+        "<!-- FISTOPLAMA_SCANNER_END -->"
+    )
 
-        before = html.split(
-            start_marker
-        )[0]
 
-        after = html.split(
-            end_marker
-        )[1]
+    if (
+        start_marker in html
+        and end_marker in html
+    ):
+        before =
+            html.split(
+                start_marker
+            )[0]
 
-        html = before + after
+        after =
+            html.split(
+                end_marker
+            )[1]
+
+        html =
+            before + after
 
 
     scanner_bridge = r"""
@@ -57,7 +71,8 @@ if web_index.exists():
   let worker = null;
   let counter = 1;
 
-  const pending = new Map();
+  const pending =
+    new Map();
 
 
   function getWorker() {
@@ -66,80 +81,87 @@ if web_index.exists():
       return worker;
     }
 
-    worker = new Worker(
-      'opencv_worker.js'
-    );
+
+    worker =
+      new Worker(
+        'opencv_worker.js'
+      );
 
 
-    worker.onmessage = function(event) {
+    worker.onmessage =
+      function(event) {
 
-      const message = event.data;
-
-      if (
-        !message ||
-        !message.id
-      ) {
-        return;
-      }
+        const message =
+          event.data;
 
 
-      const request =
-        pending.get(
+        if (
+          !message ||
+          !message.id
+        ) {
+          return;
+        }
+
+
+        const request =
+          pending.get(
+            message.id
+          );
+
+
+        if (!request) {
+          return;
+        }
+
+
+        pending.delete(
           message.id
         );
 
 
-      if (!request) {
-        return;
-      }
+        if (
+          message.ok
+        ) {
+
+          const bytes =
+            Array.from(
+              new Uint8Array(
+                message.buffer
+              )
+            );
 
 
-      pending.delete(
-        message.id
-      );
-
-
-      if (message.ok) {
-
-        const bytes =
-          Array.from(
-            new Uint8Array(
-              message.buffer
-            )
+          request.onSuccess(
+            bytes,
+            message.confidence || 0
           );
 
+        } else {
 
-        request.onSuccess(
-          bytes,
-          message.confidence || 0
-        );
+          request.onError(
+            message.error ||
+            'SCAN_FAILED'
+          );
 
-      } else {
-
-        request.onError(
-          message.error ||
-          'SCAN_FAILED'
-        );
-
-      }
-    };
+        }
+      };
 
 
     worker.onerror =
       function(event) {
 
         const error =
-          event.message ||
-          'WORKER_ERROR';
+          event &&
+          event.message
+            ? event.message
+            : 'WORKER_ERROR';
 
 
         pending.forEach(
           function(request) {
-
             request.onError(
               error
             );
-
           }
         );
 
@@ -149,7 +171,8 @@ if web_index.exists():
 
         try {
           worker.terminate();
-        } catch (_) {}
+        } catch (_) {
+        }
 
 
         worker = null;
@@ -185,14 +208,67 @@ if web_index.exists():
         counter++;
 
 
+      const timeout =
+        setTimeout(
+          function() {
+
+            const request =
+              pending.get(
+                id
+              );
+
+
+            if (!request) {
+              return;
+            }
+
+
+            pending.delete(
+              id
+            );
+
+
+            request.onError(
+              'SCAN_TIMEOUT'
+            );
+
+          },
+          25000
+        );
+
+
       pending.set(
         id,
         {
           onSuccess:
-            onSuccess,
+            function(
+              resultBytes,
+              confidence
+            ) {
+
+              clearTimeout(
+                timeout
+              );
+
+
+              onSuccess(
+                resultBytes,
+                confidence
+              );
+            },
 
           onError:
-            onError
+            function(error) {
+
+              clearTimeout(
+                timeout
+              );
+
+
+              onError(
+                error
+              );
+            }
         }
       );
 
@@ -267,9 +343,11 @@ manifest = Path(
 
 if manifest.exists():
 
-    text = manifest.read_text(
-        encoding="utf-8"
-    )
+    text =
+        manifest.read_text(
+            encoding="utf-8"
+        )
+
 
     permissions = [
         '<uses-permission android:name="android.permission.INTERNET" />',
@@ -277,7 +355,9 @@ if manifest.exists():
         '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
     ]
 
+
     additions = ""
+
 
     for permission in permissions:
 
@@ -291,14 +371,22 @@ if manifest.exists():
 
     if additions:
 
-        manifest_end = text.find(">")
+        manifest_end =
+            text.find(
+                ">"
+            )
+
 
         if manifest_end != -1:
 
             text = (
-                text[:manifest_end + 1]
+                text[
+                    :manifest_end + 1
+                ]
                 + additions
-                + text[manifest_end + 1:]
+                + text[
+                    manifest_end + 1:
+                ]
             )
 
 
@@ -318,9 +406,11 @@ plist = Path(
 
 if plist.exists():
 
-    text = plist.read_text(
-        encoding="utf-8"
-    )
+    text =
+        plist.read_text(
+            encoding="utf-8"
+        )
+
 
     additions = """
     <key>NSCameraUsageDescription</key>
@@ -336,11 +426,12 @@ if plist.exists():
         not in text
     ):
 
-        text = text.replace(
-            "</dict>",
-            additions
-            + "\n</dict>",
-        )
+        text =
+            text.replace(
+                "</dict>",
+                additions
+                + "\n</dict>",
+            )
 
 
     plist.write_text(
@@ -350,30 +441,38 @@ if plist.exists():
 
 
 # ============================================================
-# BUILD KONTROL
+# KONTROL
 # ============================================================
 
 print(
     "Platform patch tamamlandı."
 )
 
+
 if web_dir.exists():
 
     print(
         "opencv.js:",
-        (web_dir / "opencv.js").exists(),
+        (
+            web_dir /
+            "opencv.js"
+        ).exists(),
     )
+
 
     print(
         "opencv_worker.js:",
         target_worker.exists(),
     )
 
+
     if web_index.exists():
 
-        final_html = web_index.read_text(
+        final_html =
+            web_index.read_text(
                 encoding="utf-8"
             )
+
 
         print(
             "receiptScanner bridge:",
