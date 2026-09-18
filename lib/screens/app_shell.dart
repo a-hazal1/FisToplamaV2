@@ -173,7 +173,55 @@ class ReceiptScanPanel extends StatefulWidget {
 }
 class _ReceiptScanPanelState extends State<ReceiptScanPanel> {
   final picker=ImagePicker(), note=TextEditingController(), scanner=ScannerService(); Uint8List? preview, original; bool detected=false, busy=false;
-  Future<void> pick(ImageSource src) async { final x=await picker.pickImage(source:src,imageQuality:92,maxWidth:2600); if(x==null)return; setState(()=>busy=true); final b=await x.readAsBytes(); final r=await scanner.process(x.path,b); if(mounted)setState((){preview=r.scanned;original=r.original;detected=r.detected;busy=false;}); }
+  Future<void> pick(ImageSource src) async {
+    final x = await picker.pickImage(
+      source: src,
+      imageQuality: 92,
+      maxWidth: 2600,
+    );
+  
+    if (x == null) return;
+  
+    setState(() => busy = true);
+  
+    try {
+      final b = await x.readAsBytes();
+  
+      final r = await scanner.process(
+        path: x.path,
+        originalBytes: b,
+      );
+  
+      if (!mounted) return;
+  
+      setState(() {
+        preview = r.scannedBytes;
+        original = r.originalBytes;
+        detected = true;
+        busy = false;
+      });
+    } on ReceiptNotDetectedException catch (e) {
+      if (!mounted) return;
+  
+      setState(() => busy = false);
+  
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+  
+      setState(() => busy = false);
+  
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fiş tarama hatası: $e'),
+        ),
+      );
+    }
+  }
   Future<void> save() async { if(preview==null||original==null)return; setState(()=>busy=true); final c=Supabase.instance.client,id=const Uuid().v4(),uid=widget.profile['id']; final op='$uid/$id/original.jpg', sp='$uid/$id/scanned.jpg'; try { await c.storage.from('receipts').uploadBinary(op,original!,fileOptions:const FileOptions(contentType:'image/jpeg')); await c.storage.from('receipts').uploadBinary(sp,preview!,fileOptions:const FileOptions(contentType:'image/jpeg')); await c.from('receipts').insert({'id':id,'user_id':uid,'branch_id':widget.profile['branch_id'],'storage_path':sp,'original_storage_path':op,'note':note.text.trim(),'edges_detected':detected}); if(mounted){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Fiş merkezi arşive kaydedildi.')));widget.onSaved();} } catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Kaydetme hatası: $e')));} finally {if(mounted)setState(()=>busy=false);} }
   @override Widget build(BuildContext context)=>SingleChildScrollView(padding:const EdgeInsets.all(28),child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:1100),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
     const Text('Fiş Tara',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:6),Text(kIsWeb?'Web’de görsel yüklenir; mobilde kenarlar otomatik algılanır.':'Fişi çek; kenarlar algılansın, perspektif düzelsin ve taranmış olarak arşive eklensin.',style:const TextStyle(color:Color(0xFF667085))),const SizedBox(height:18),
