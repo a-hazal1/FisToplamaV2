@@ -518,7 +518,10 @@
     try {
       cv.cvtColor(originalRgba, originalRgb, cv.COLOR_RGBA2RGB);
 
-      const scale = Math.min(1.0, 700 / Math.max(originalRgb.cols, originalRgb.rows));
+      const scale = Math.min(
+        1.0,
+        450 / Math.max(originalRgb.cols, originalRgb.rows)
+      );
 
       if (scale < 1.0) {
         cv.resize(
