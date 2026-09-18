@@ -1,38 +1,117 @@
 (function () {
-  function opencvReady() {
-    return window.cv && window.cv.Mat;
-  }
+  let cvInstance = null;
+  let cvLoadingPromise = null;
 
-  async function ensureOpenCv(timeoutMs = 25000) {
-    if (opencvReady()) {
-      return window.cv;
+  async function getReadyCv(timeoutMs = 30000) {
+    if (cvInstance && cvInstance.Mat) {
+      return cvInstance;
     }
 
-    let script = document.querySelector(
-      'script[data-fistoplama-opencv]'
-    );
-
-    if (!script) {
-      script = document.createElement('script');
-      script.src = 'https://docs.opencv.org/4.10.0/opencv.js';
-      script.async = true;
-      script.dataset.fistoplamaOpencv = '1';
-      document.head.appendChild(script);
+    if (cvLoadingPromise) {
+      return cvLoadingPromise;
     }
 
-    const started = Date.now();
+    cvLoadingPromise = new Promise(async (resolve, reject) => {
+      const startedAt = Date.now();
 
-    while (!opencvReady()) {
-      if (Date.now() - started > timeoutMs) {
-        throw new Error('OPENCV_LOAD_TIMEOUT');
+      try {
+        // OpenCV scripti index.html tarafından henüz eklenmemişse
+        // burada fallback olarak yükle.
+        let script = document.querySelector(
+          'script[src*="opencv.js"]'
+        );
+
+        if (!script) {
+          script = document.createElement('script');
+
+          script.src =
+            'https://docs.opencv.org/4.10.0/opencv.js';
+
+          script.async = true;
+
+          script.setAttribute(
+            'data-fistoplama-opencv',
+            '1'
+          );
+
+          document.head.appendChild(script);
+        }
+
+        while (Date.now() - startedAt < timeoutMs) {
+          if (window.cv) {
+            let candidate = window.cv;
+
+            /*
+             * Bazı OpenCV.js sürümlerinde cv doğrudan object,
+             * bazı sürümlerde Promise/thenable olarak geliyor.
+             */
+            if (
+              candidate &&
+              typeof candidate.then === 'function'
+            ) {
+              try {
+                candidate = await candidate;
+
+                if (candidate) {
+                  window.cv = candidate;
+                }
+              } catch (e) {
+                // Henüz runtime hazır olmayabilir.
+              }
+            }
+
+            if (
+              candidate &&
+              typeof candidate.Mat === 'function'
+            ) {
+              cvInstance = candidate;
+
+              resolve(candidate);
+              return;
+            }
+
+            /*
+             * cv object oluşmuş ama runtime henüz tamamlanmamışsa
+             * biraz daha bekle.
+             */
+            if (
+              candidate &&
+              candidate.calledRun === true &&
+              typeof candidate.Mat === 'function'
+            ) {
+              cvInstance = candidate;
+
+              resolve(candidate);
+              return;
+            }
+          }
+
+          await new Promise((r) => {
+            setTimeout(r, 150);
+          });
+        }
+
+        reject(
+          new Error(
+            'OPENCV_LOAD_TIMEOUT'
+          )
+        );
+      } catch (e) {
+        reject(
+          new Error(
+            'OPENCV_LOAD_FAILED: ' +
+              (e?.message ?? e)
+          )
+        );
       }
+    });
 
-      await new Promise((resolve) => {
-        setTimeout(resolve, 100);
-      });
+    try {
+      return await cvLoadingPromise;
+    } catch (e) {
+      cvLoadingPromise = null;
+      throw e;
     }
-
-    return window.cv;
   }
 
   function distance(a, b) {
@@ -52,99 +131,167 @@
     );
 
     const tl = points[
-      sums.indexOf(Math.min(...sums))
+      sums.indexOf(
+        Math.min(...sums)
+      )
     ];
 
     const br = points[
-      sums.indexOf(Math.max(...sums))
+      sums.indexOf(
+        Math.max(...sums)
+      )
     ];
 
     const tr = points[
-      diffs.indexOf(Math.max(...diffs))
+      diffs.indexOf(
+        Math.max(...diffs)
+      )
     ];
 
     const bl = points[
-      diffs.indexOf(Math.min(...diffs))
+      diffs.indexOf(
+        Math.min(...diffs)
+      )
     ];
 
-    return [tl, tr, br, bl];
+    return [
+      tl,
+      tr,
+      br,
+      bl
+    ];
   }
 
-  async function canvasToBytes(canvas) {
-    const blob = await new Promise(
-      (resolve, reject) => {
-        canvas.toBlob(
-          (b) => {
-            if (b) {
-              resolve(b);
-            } else {
-              reject(
-                new Error('OUTPUT_BLOB_FAILED')
-              );
-            }
-          },
-          'image/jpeg',
-          0.94
-        );
-      }
-    );
+  async function canvasToBytes(
+    canvas
+  ) {
+    const blob =
+      await new Promise(
+        (resolve, reject) => {
+          canvas.toBlob(
+            (result) => {
+              if (result) {
+                resolve(result);
+              } else {
+                reject(
+                  new Error(
+                    'OUTPUT_BLOB_FAILED'
+                  )
+                );
+              }
+            },
+            'image/jpeg',
+            0.94
+          );
+        }
+      );
 
-    const buffer = await blob.arrayBuffer();
+    const buffer =
+      await blob.arrayBuffer();
 
     return Array.from(
       new Uint8Array(buffer)
     );
   }
 
-  async function processReceipt(rawBytes) {
-    const cv = await ensureOpenCv();
+  async function processReceipt(
+    rawBytes
+  ) {
+    const cv =
+      await getReadyCv();
+
+    if (
+      !cv ||
+      typeof cv.Mat !== 'function'
+    ) {
+      throw new Error(
+        'OPENCV_LOAD'
+      );
+    }
 
     const inputBytes =
-      Uint8Array.from(rawBytes);
+      Uint8Array.from(
+        rawBytes
+      );
 
     const blob =
-      new Blob([inputBytes]);
+      new Blob(
+        [inputBytes]
+      );
 
-    const bitmap =
-      await createImageBitmap(blob);
+    let bitmap;
 
+    try {
+      bitmap =
+        await createImageBitmap(
+          blob
+        );
+    } catch (e) {
+      throw new Error(
+        'IMAGE_DECODE_FAILED'
+      );
+    }
+
+    /*
+     * Çok büyük fotoğrafları küçült.
+     * Hem tarayıcıyı rahatlatır hem OpenCV işlemini hızlandırır.
+     */
     const maxSide = 1800;
 
-    const scale = Math.min(
-      1,
-      maxSide /
-        Math.max(
-          bitmap.width,
-          bitmap.height
+    const scale =
+      Math.min(
+        1,
+        maxSide /
+          Math.max(
+            bitmap.width,
+            bitmap.height
+          )
+      );
+
+    const width =
+      Math.max(
+        1,
+        Math.round(
+          bitmap.width *
+            scale
         )
-    );
+      );
 
-    const width = Math.max(
-      1,
-      Math.round(
-        bitmap.width * scale
-      )
-    );
-
-    const height = Math.max(
-      1,
-      Math.round(
-        bitmap.height * scale
-      )
-    );
+    const height =
+      Math.max(
+        1,
+        Math.round(
+          bitmap.height *
+            scale
+        )
+      );
 
     const canvas =
-      document.createElement('canvas');
+      document.createElement(
+        'canvas'
+      );
 
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width =
+      width;
 
-    const ctx = canvas.getContext(
-      '2d',
-      {
-        willReadFrequently: true,
-      }
-    );
+    canvas.height =
+      height;
+
+    const ctx =
+      canvas.getContext(
+        '2d',
+        {
+          willReadFrequently: true
+        }
+      );
+
+    if (!ctx) {
+      bitmap.close();
+
+      throw new Error(
+        'CANVAS_CONTEXT_FAILED'
+      );
+    }
 
     ctx.drawImage(
       bitmap,
@@ -174,32 +321,48 @@
     const hierarchy =
       new cv.Mat();
 
-    let best = null;
+    let bestPoints = null;
     let bestArea = 0;
 
     try {
+      /*
+       * 1. Gri tonlama
+       */
       cv.cvtColor(
         src,
         gray,
         cv.COLOR_RGBA2GRAY
       );
 
+      /*
+       * 2. Gürültüyü azalt
+       */
       cv.GaussianBlur(
         gray,
         blur,
-        new cv.Size(5, 5),
+        new cv.Size(
+          5,
+          5
+        ),
         0,
         0,
         cv.BORDER_DEFAULT
       );
 
+      /*
+       * 3. Kenar tespiti
+       */
       cv.Canny(
         blur,
         edges,
-        40,
-        140
+        35,
+        135
       );
 
+      /*
+       * 4. Kopuk kenarları
+       * biraz birleştir.
+       */
       const kernel =
         cv.Mat.ones(
           3,
@@ -211,12 +374,18 @@
         edges,
         edges,
         kernel,
-        new cv.Point(-1, -1),
-        1
+        new cv.Point(
+          -1,
+          -1
+        ),
+        2
       );
 
       kernel.delete();
 
+      /*
+       * 5. Konturları bul
+       */
       cv.findContours(
         edges,
         contours,
@@ -226,42 +395,65 @@
       );
 
       const imageArea =
-        width * height;
+        width *
+        height;
 
-      // Fiş küçük görünse bile algılasın
+      /*
+       * Fiş fotoğrafın sadece
+       * %1.5'ini kaplasa bile
+       * değerlendirmeye al.
+       */
       const minArea =
-        imageArea * 0.02;
+        imageArea *
+        0.015;
 
       for (
         let i = 0;
-        i < contours.size();
+        i <
+        contours.size();
         i++
       ) {
         const cnt =
           contours.get(i);
 
-        const area =
-          Math.abs(
-            cv.contourArea(cnt)
-          );
+        try {
+          const area =
+            Math.abs(
+              cv.contourArea(
+                cnt
+              )
+            );
 
-        if (
-          area >= minArea &&
-          area > bestArea
-        ) {
+          if (
+            area <
+              minArea ||
+            area <=
+              bestArea
+          ) {
+            continue;
+          }
+
           const perimeter =
             cv.arcLength(
               cnt,
               true
             );
 
+          /*
+           * Tek toleransa güvenmiyoruz.
+           * Fiş kıvrılmış / gölgeli olabilir.
+           */
           const tolerances = [
+            0.008,
             0.01,
+            0.012,
             0.015,
+            0.018,
             0.02,
             0.025,
             0.03,
-            0.04
+            0.04,
+            0.05
           ];
 
           for (
@@ -271,80 +463,234 @@
             const approx =
               new cv.Mat();
 
-            cv.approxPolyDP(
-              cnt,
-              approx,
-              tolerance *
-                perimeter,
-              true
-            );
+            try {
+              cv.approxPolyDP(
+                cnt,
+                approx,
+                tolerance *
+                  perimeter,
+                true
+              );
 
-            if (
-              approx.rows === 4 &&
-              cv.isContourConvex(
-                approx
-              )
-            ) {
-              const points = [];
-
-              for (
-                let r = 0;
-                r < 4;
-                r++
+              if (
+                approx.rows === 4 &&
+                cv.isContourConvex(
+                  approx
+                )
               ) {
-                const ptr =
-                  approx.intPtr(
-                    r,
-                    0
-                  );
+                const points =
+                  [];
 
-                points.push([
-                  ptr[0],
-                  ptr[1]
-                ]);
+                for (
+                  let r = 0;
+                  r < 4;
+                  r++
+                ) {
+                  const ptr =
+                    approx.intPtr(
+                      r,
+                      0
+                    );
+
+                  points.push([
+                    ptr[0],
+                    ptr[1]
+                  ]);
+                }
+
+                bestPoints =
+                  points;
+
+                bestArea =
+                  area;
+
+                break;
               }
-
-              best = points;
-              bestArea = area;
-
+            } finally {
               approx.delete();
-              break;
             }
-
-            approx.delete();
           }
+        } finally {
+          cnt.delete();
         }
-
-        cnt.delete();
       }
 
-      if (!best) {
+      /*
+       * Tam dörtgen bulunamadıysa
+       * ikinci yöntem:
+       * en büyük konturun bounding box'ını dene.
+       *
+       * Bu sayede fişin bir kenarı çok silikse
+       * tamamen başarısız olmak yerine
+       * yine kırpma şansı verir.
+       */
+      if (!bestPoints) {
+        let largestRect = null;
+        let largestRectArea = 0;
+
+        /*
+         * Konturlar yukarıda delete edildiği için
+         * ikinci kez contour çıkarıyoruz.
+         */
+        const contours2 =
+          new cv.MatVector();
+
+        const hierarchy2 =
+          new cv.Mat();
+
+        try {
+          cv.findContours(
+            edges,
+            contours2,
+            hierarchy2,
+            cv.RETR_EXTERNAL,
+            cv.CHAIN_APPROX_SIMPLE
+          );
+
+          for (
+            let i = 0;
+            i <
+            contours2.size();
+            i++
+          ) {
+            const cnt =
+              contours2.get(i);
+
+            try {
+              const area =
+                Math.abs(
+                  cv.contourArea(
+                    cnt
+                  )
+                );
+
+              if (
+                area >
+                  largestRectArea &&
+                area >=
+                  minArea
+              ) {
+                const rect =
+                  cv.boundingRect(
+                    cnt
+                  );
+
+                largestRect =
+                  rect;
+
+                largestRectArea =
+                  area;
+              }
+            } finally {
+              cnt.delete();
+            }
+          }
+        } finally {
+          contours2.delete();
+          hierarchy2.delete();
+        }
+
+        if (
+          largestRect &&
+          largestRect.width >
+            40 &&
+          largestRect.height >
+            80
+        ) {
+          const x =
+            largestRect.x;
+
+          const y =
+            largestRect.y;
+
+          const w =
+            largestRect.width;
+
+          const h =
+            largestRect.height;
+
+          bestPoints = [
+            [
+              x,
+              y
+            ],
+            [
+              x + w,
+              y
+            ],
+            [
+              x + w,
+              y + h
+            ],
+            [
+              x,
+              y + h
+            ]
+          ];
+
+          bestArea =
+            largestRectArea;
+        }
+      }
+
+      if (!bestPoints) {
         throw new Error(
           'NO_DOCUMENT'
         );
       }
 
       const ordered =
-        orderPoints(best);
+        orderPoints(
+          bestPoints
+        );
 
-      const tl = ordered[0];
-      const tr = ordered[1];
-      const br = ordered[2];
-      const bl = ordered[3];
+      const tl =
+        ordered[0];
+
+      const tr =
+        ordered[1];
+
+      const br =
+        ordered[2];
+
+      const bl =
+        ordered[3];
+
+      /*
+       * Çıktı genişliği/yüksekliği
+       * dört kenardan hesaplanıyor.
+       */
+      const widthBottom =
+        distance(
+          br,
+          bl
+        );
+
+      const widthTop =
+        distance(
+          tr,
+          tl
+        );
+
+      const heightRight =
+        distance(
+          tr,
+          br
+        );
+
+      const heightLeft =
+        distance(
+          tl,
+          bl
+        );
 
       const outWidth =
         Math.max(
           220,
           Math.round(
             Math.max(
-              distance(
-                br,
-                bl
-              ),
-              distance(
-                tr,
-                tl
-              )
+              widthBottom,
+              widthTop
             )
           )
         );
@@ -354,14 +700,8 @@
           320,
           Math.round(
             Math.max(
-              distance(
-                tr,
-                br
-              ),
-              distance(
-                tl,
-                bl
-              )
+              heightRight,
+              heightLeft
             )
           )
         );
@@ -415,85 +755,106 @@
       const warped =
         new cv.Mat();
 
-      cv.warpPerspective(
-        src,
-        warped,
-        transform,
-        new cv.Size(
-          outWidth,
-          outHeight
-        ),
-        cv.INTER_LINEAR,
-        cv.BORDER_REPLICATE,
-        new cv.Scalar()
-      );
-
-      // Hafif taranmış belge görünümü
-      const grayScan =
-        new cv.Mat();
-
-      cv.cvtColor(
-        warped,
-        grayScan,
-        cv.COLOR_RGBA2GRAY
-      );
-
-      cv.equalizeHist(
-        grayScan,
-        grayScan
-      );
-
-      const finalImage =
-        new cv.Mat();
-
-      cv.cvtColor(
-        grayScan,
-        finalImage,
-        cv.COLOR_GRAY2RGBA
-      );
-
-      const outputCanvas =
-        document.createElement(
-          'canvas'
+      try {
+        /*
+         * Perspektif düzeltme
+         */
+        cv.warpPerspective(
+          src,
+          warped,
+          transform,
+          new cv.Size(
+            outWidth,
+            outHeight
+          ),
+          cv.INTER_LINEAR,
+          cv.BORDER_REPLICATE,
+          new cv.Scalar()
         );
 
-      outputCanvas.width =
-        outWidth;
+        /*
+         * Tarayıcı görünümü.
+         * Önce grayscale.
+         */
+        const scannedGray =
+          new cv.Mat();
 
-      outputCanvas.height =
-        outHeight;
+        const finalImage =
+          new cv.Mat();
 
-      cv.imshow(
-        outputCanvas,
-        finalImage
-      );
+        try {
+          cv.cvtColor(
+            warped,
+            scannedGray,
+            cv.COLOR_RGBA2GRAY
+          );
 
-      const outputBytes =
-        await canvasToBytes(
-          outputCanvas
-        );
+          /*
+           * Kontrast iyileştirme.
+           */
+          cv.equalizeHist(
+            scannedGray,
+            scannedGray
+          );
 
-      const confidence =
-        Math.min(
-          1,
-          Math.max(
-            0,
-            bestArea /
-              imageArea
-          )
-        );
+          /*
+           * Görüntüyü tekrar
+           * canvas için RGBA yap.
+           */
+          cv.cvtColor(
+            scannedGray,
+            finalImage,
+            cv.COLOR_GRAY2RGBA
+          );
 
-      srcPoints.delete();
-      dstPoints.delete();
-      transform.delete();
-      warped.delete();
-      grayScan.delete();
-      finalImage.delete();
+          const outputCanvas =
+            document.createElement(
+              'canvas'
+            );
 
-      return {
-        bytes: outputBytes,
-        confidence: confidence,
-      };
+          outputCanvas.width =
+            outWidth;
+
+          outputCanvas.height =
+            outHeight;
+
+          cv.imshow(
+            outputCanvas,
+            finalImage
+          );
+
+          const outputBytes =
+            await canvasToBytes(
+              outputCanvas
+            );
+
+          const confidence =
+            Math.min(
+              1,
+              Math.max(
+                0,
+                bestArea /
+                  imageArea
+              )
+            );
+
+          return {
+            bytes:
+              outputBytes,
+
+            confidence:
+              confidence
+          };
+        } finally {
+          scannedGray.delete();
+          finalImage.delete();
+        }
+      } finally {
+        srcPoints.delete();
+        dstPoints.delete();
+        transform.delete();
+        warped.delete();
+      }
     } finally {
       src.delete();
       gray.delete();
@@ -504,6 +865,16 @@
     }
   }
 
+  /*
+   * Flutter tarafına Promise göndermiyoruz.
+   * Callback ile iletiyoruz.
+   *
+   * Böylece daha önce aldığın:
+   *
+   * a.then is not a function
+   *
+   * hatası oluşmaz.
+   */
   function processReceiptWithCallbacks(
     rawBytes,
     onSuccess,
@@ -522,6 +893,11 @@
       )
       .catch(
         (error) => {
+          console.error(
+            'Receipt scanner error:',
+            error
+          );
+
           onError(
             error &&
             error.message
@@ -534,6 +910,25 @@
 
   window.receiptScanner = {
     processReceiptWithCallbacks:
-      processReceiptWithCallbacks,
+      processReceiptWithCallbacks
   };
+
+  /*
+   * Sayfa açılır açılmaz
+   * OpenCV'yi hazırlamaya başla.
+   * Kullanıcı görsel seçene kadar
+   * çoğunlukla yüklenmiş olur.
+   */
+  getReadyCv()
+    .then(() => {
+      console.log(
+        'FişToplama OpenCV hazır.'
+      );
+    })
+    .catch((error) => {
+      console.error(
+        'OpenCV başlangıç yükleme hatası:',
+        error
+      );
+    });
 })();
