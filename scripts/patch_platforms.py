@@ -371,8 +371,7 @@ if web_dir.exists():
 
     if web_index.exists():
 
-        final_html =
-            web_index.read_text(
+        final_html = web_index.read_text(
                 encoding="utf-8"
             )
 
