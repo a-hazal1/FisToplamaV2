@@ -54,9 +54,9 @@ jobs:
       - run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=ios .
       - run: python3 scripts/patch_platforms.py
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-      - run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app FisToplama-Pro-iOS-Unsigned.zip
+      - run: flutter build ios --simulator --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+      - run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app FisToplama-Pro-iOS-Simulator.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: FisToplama-Pro-iOS-Unsigned
-          path: FisToplama-Pro-iOS-Unsigned.zip
+          name: FisToplama-Pro-iOS-Simulator
+          path: FisToplama-Pro-iOS-Simulator.zip
