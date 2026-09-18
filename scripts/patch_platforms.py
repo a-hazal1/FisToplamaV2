@@ -291,8 +291,7 @@ if manifest.exists():
 
     if additions:
 
-        manifest_end =
-            text.find(">")
+        manifest_end = text.find(">")
 
         if manifest_end != -1:
 
