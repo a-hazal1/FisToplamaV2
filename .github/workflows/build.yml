@@ -2,7 +2,9 @@ name: Build FisToplama Pro
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+
   workflow_dispatch:
 
 concurrency:
@@ -14,73 +16,191 @@ permissions:
   pages: write
   id-token: write
 
+
 jobs:
+
+  # ==========================================================
+  # ANDROID + WEB
+  # ==========================================================
+
   android-web:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      # -------------------------------------------------------
+      # Repository
+      # -------------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # -------------------------------------------------------
+      # Flutter
+      # -------------------------------------------------------
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
+
+      # -------------------------------------------------------
+      # Android ve Web platform klasörlerini oluştur
+      # -------------------------------------------------------
+
       - name: Create Android and Web platforms
-        run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=android,web .
+        run: |
+          flutter create \
+            --project-name fis_toplama_pro \
+            --org com.fistoplama \
+            --platforms=android,web \
+            .
+
+
+      # -------------------------------------------------------
+      # OpenCV.js'i build içine yerel olarak indir
+      # -------------------------------------------------------
 
       - name: Download OpenCV locally
-        run: curl -L --retry 3 --fail https://docs.opencv.org/4.x/opencv.js -o web/opencv.js
+        run: |
+          curl \
+            -L \
+            --retry 3 \
+            --retry-delay 2 \
+            --fail \
+            https://docs.opencv.org/4.x/opencv.js \
+            -o web/opencv.js
+
+
+      # -------------------------------------------------------
+      # Android izinleri + Web scanner/worker kopyalama
+      # -------------------------------------------------------
 
       - name: Patch platforms
-        run: python3 scripts/patch_platforms.py
-
-      - name: Verify scanner files
         run: |
+          python3 scripts/patch_platforms.py
+
+
+      # -------------------------------------------------------
+      # Web scanner dosyalarının gerçekten hazır olduğunu kontrol et
+      # -------------------------------------------------------
+
+      - name: Verify scanner source files
+        run: |
+          echo "Checking web scanner files..."
+
           test -s web/opencv.js
           test -s web/opencv_receipt.js
           test -s web/opencv_worker.js
-          grep -q opencv_receipt.js web/index.html
+
+          grep -q "opencv_receipt.js" web/index.html
+
+          echo "All scanner source files OK"
+
+          ls -lh web/opencv.js
+          ls -lh web/opencv_receipt.js
+          ls -lh web/opencv_worker.js
+
+
+      # -------------------------------------------------------
+      # Dependencies
+      # -------------------------------------------------------
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: |
+          flutter pub get
+
+
+      # -------------------------------------------------------
+      # Android
+      # -------------------------------------------------------
 
       - name: Build Android APK
-        run: >
-          flutter build apk --release
-          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          flutter build apk \
+            --release \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+
+      # -------------------------------------------------------
+      # Web
+      # -------------------------------------------------------
 
       - name: Build Web
-        run: >
-          flutter build web --release
-          --base-href "/${{ github.event.repository.name }}/"
-          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          flutter build web \
+            --release \
+            --base-href "/${{ github.event.repository.name }}/" \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+
+      # -------------------------------------------------------
+      # Build sonrasında 3 scanner dosyası gerçekten deploy
+      # klasörüne geçti mi?
+      # -------------------------------------------------------
 
       - name: Verify built scanner files
         run: |
+          echo "Checking build/web scanner files..."
+
           test -s build/web/opencv.js
           test -s build/web/opencv_receipt.js
           test -s build/web/opencv_worker.js
-          grep -q opencv_receipt.js build/web/index.html
 
-      - uses: actions/upload-artifact@v4
+          grep -q "opencv_receipt.js" build/web/index.html
+
+          echo "Built scanner files OK"
+
+          ls -lh build/web/opencv.js
+          ls -lh build/web/opencv_receipt.js
+          ls -lh build/web/opencv_worker.js
+
+
+      # -------------------------------------------------------
+      # APK artifact
+      # -------------------------------------------------------
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
         with:
           name: FisToplama-Pro-Android
           path: build/app/outputs/flutter-apk/app-release.apk
 
-      - uses: actions/upload-artifact@v4
+
+      # -------------------------------------------------------
+      # Web artifact
+      # -------------------------------------------------------
+
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
         with:
           name: FisToplama-Pro-Web
           path: build/web
 
-      - uses: actions/upload-pages-artifact@v3
+
+      # -------------------------------------------------------
+      # GitHub Pages artifact
+      # -------------------------------------------------------
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
 
+
+
+  # ==========================================================
+  # GITHUB PAGES
+  # ==========================================================
+
   deploy-web:
     needs: android-web
+
     runs-on: ubuntu-latest
 
     environment:
@@ -88,42 +208,100 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - id: deployment
+
+      - name: Deploy GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
+
+
+
+  # ==========================================================
+  # IOS
+  # ==========================================================
 
   ios:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Create iOS platform
-        run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=ios .
 
-      - name: Patch platforms
-        run: python3 scripts/patch_platforms.py
+      # -------------------------------------------------------
+      # iOS platform
+      # -------------------------------------------------------
+
+      - name: Create iOS platform
+        run: |
+          flutter create \
+            --project-name fis_toplama_pro \
+            --org com.fistoplama \
+            --platforms=ios \
+            .
+
+
+      # -------------------------------------------------------
+      # iOS permission patch
+      # -------------------------------------------------------
+
+      - name: Patch iOS platform
+        run: |
+          python3 scripts/patch_platforms.py
+
+
+      # -------------------------------------------------------
+      # Dependencies
+      # -------------------------------------------------------
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: |
+          flutter pub get
+
+
+      # -------------------------------------------------------
+      # Simulator build
+      #
+      # Gerçek iPhone IPA değildir.
+      # Gerçek cihaz/TestFlight için Apple signing gerekir.
+      # -------------------------------------------------------
 
       - name: Build iOS Simulator
-        run: >
-          flutter build ios --simulator
-          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          flutter build ios \
+            --simulator \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+
+      # -------------------------------------------------------
+      # Simulator app ZIP
+      # -------------------------------------------------------
 
       - name: Package iOS Simulator
-        run: >
-          ditto -c -k --sequesterRsrc --keepParent
-          build/ios/iphonesimulator/Runner.app
-          FisToplama-Pro-iOS-Simulator.zip
+        run: |
+          ditto \
+            -c \
+            -k \
+            --sequesterRsrc \
+            --keepParent \
+            build/ios/iphonesimulator/Runner.app \
+            FisToplama-Pro-iOS-Simulator.zip
 
-      - uses: actions/upload-artifact@v4
+
+      # -------------------------------------------------------
+      # iOS artifact
+      # -------------------------------------------------------
+
+      - name: Upload iOS Simulator artifact
+        uses: actions/upload-artifact@v4
         with:
           name: FisToplama-Pro-iOS-Simulator
           path: FisToplama-Pro-iOS-Simulator.zip
