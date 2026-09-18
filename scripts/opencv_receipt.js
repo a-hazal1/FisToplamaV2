@@ -1,105 +1,25 @@
-let cvInstance = null;
-let cvLoadingPromise = null;
+(function () {
+  async function getCv(timeoutMs = 30000) {
+    const start = Date.now();
 
-async function getReadyCv(timeoutMs = 30000) {
-  if (
-    cvInstance &&
-    typeof cvInstance.Mat === 'function'
-  ) {
-    return cvInstance;
-  }
+    while (Date.now() - start < timeoutMs) {
+      let cv = window.cv;
 
-  if (cvLoadingPromise) {
-    return cvLoadingPromise;
-  }
-
-  cvLoadingPromise = new Promise(
-    async (resolve, reject) => {
-      try {
-        let script = document.querySelector(
-          'script[data-fistoplama-opencv]'
-        );
-
-        if (!script) {
-          script =
-            document.createElement('script');
-
-          // ARTIK CDN DEĞİL.
-          // GitHub Pages'teki kendi opencv.js dosyamız.
-          script.src = 'opencv.js';
-
-          script.async = true;
-
-          script.setAttribute(
-            'data-fistoplama-opencv',
-            '1'
-          );
-
-          document.head.appendChild(
-            script
-          );
+      if (cv) {
+        if (typeof cv.then === 'function') {
+          cv = await cv;
+          window.cv = cv;
         }
 
-        const startedAt =
-          Date.now();
-
-        while (
-          Date.now() - startedAt <
-          timeoutMs
-        ) {
-          if (window.cv) {
-            let candidate =
-              window.cv;
-
-            if (
-              candidate &&
-              typeof candidate.then ===
-                'function'
-            ) {
-              candidate =
-                await candidate;
-
-              window.cv =
-                candidate;
-            }
-
-            if (
-              candidate &&
-              typeof candidate.Mat ===
-                'function'
-            ) {
-              cvInstance =
-                candidate;
-
-              resolve(candidate);
-              return;
-            }
-          }
-
-          await new Promise(
-            (r) =>
-              setTimeout(
-                r,
-                150
-              )
-          );
+        if (cv && typeof cv.Mat === 'function') {
+          return cv;
         }
-
-        reject(
-          new Error(
-            'OPENCV_LOAD_TIMEOUT'
-          )
-        );
-      } catch (e) {
-        reject(e);
       }
-    }
-  );
 
-  try {
-    return await cvLoadingPromise;
-  } catch (e) {
-    cvLoadingPromise = null;
-    throw e;
+      await new Promise(
+        (resolve) => setTimeout(resolve, 150)
+      );
+    }
+
+    throw new Error('OPENCV_LOAD_TIMEOUT');
   }
-}
