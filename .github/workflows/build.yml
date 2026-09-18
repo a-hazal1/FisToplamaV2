@@ -1,0 +1,62 @@
+name: Build FisToplama Pro
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  android-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=android,web .
+      - run: python scripts/patch_platforms.py
+      - run: flutter pub get
+      - name: Build Android APK
+        run: flutter build apk --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+      - name: Build Web
+        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/" --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FisToplama-Pro-Android
+          path: build/app/outputs/flutter-apk/app-release.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FisToplama-Pro-Web
+          path: build/web
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+  deploy-web:
+    needs: android-web
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=ios .
+      - run: python3 scripts/patch_platforms.py
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+      - run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app FisToplama-Pro-iOS-Unsigned.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FisToplama-Pro-iOS-Unsigned
+          path: FisToplama-Pro-iOS-Unsigned.zip
