@@ -21,14 +21,29 @@ jobs:
           cache: true
       - name: Create Android and Web platforms
         run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=android,web .
+      - name: Download OpenCV locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-all-errors --connect-timeout 20 \
+            https://docs.opencv.org/4.x/opencv.js \
+            -o web/opencv.js
+          bytes=$(wc -c < web/opencv.js)
+          echo "Downloaded OpenCV.js: ${bytes} bytes"
+          test "$bytes" -gt 1000000
       - name: Patch platforms
         run: python3 scripts/patch_platforms.py
       - name: Verify scanner files
+        shell: bash
         run: |
+          set -euo pipefail
           test -s web/opencv.js
           test -s web/opencv_receipt.js
           test -s web/opencv_worker.js
-          grep -q opencv_receipt.js web/index.html
+          grep -q 'opencv_receipt.js' web/index.html
+          node --check web/opencv_receipt.js
+          node --check web/opencv_worker.js
+          python3 -m py_compile scripts/patch_platforms.py
       - run: flutter pub get
       - name: Build Android APK
         run: flutter build apk --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
