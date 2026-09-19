@@ -22,13 +22,14 @@ jobs:
       - name: Create Android and Web platforms
         run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=android,web .
       - name: Download OpenCV locally
-        run: curl -L --retry 3 --fail https://docs.opencv.org/4.x/opencv.js -o web/opencv.js
+        run: curl -L --retry 3 --fail https://docs.opencv.org/4.10.0/opencv.js -o web/opencv.js
       - name: Patch platforms
         run: python3 scripts/patch_platforms.py
       - name: Verify scanner files
         run: |
           test -s web/opencv.js
           test -s web/opencv_receipt.js
+          test -s web/opencv_worker.js
           grep -q opencv_receipt.js web/index.html
       - run: flutter pub get
       - name: Build Android APK
@@ -39,6 +40,7 @@ jobs:
         run: |
           test -s build/web/opencv.js
           test -s build/web/opencv_receipt.js
+          test -s build/web/opencv_worker.js
           grep -q opencv_receipt.js build/web/index.html
       - uses: actions/upload-artifact@v4
         with:
@@ -77,4 +79,3 @@ jobs:
         with:
           name: FisToplama-Pro-iOS-Simulator
           path: FisToplama-Pro-iOS-Simulator.zip
-
