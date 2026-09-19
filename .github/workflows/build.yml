@@ -21,8 +21,6 @@ jobs:
           cache: true
       - name: Create Android and Web platforms
         run: flutter create --project-name fis_toplama_pro --org com.fistoplama --platforms=android,web .
-      - name: Download OpenCV locally
-        run: curl -L --retry 3 --fail https://docs.opencv.org/4.10.0/opencv.js -o web/opencv.js
       - name: Patch platforms
         run: python3 scripts/patch_platforms.py
       - name: Verify scanner files
